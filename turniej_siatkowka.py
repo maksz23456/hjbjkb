@@ -11,9 +11,8 @@ st.set_page_config(
 )
 
 # --- FUNKCJE LOGICZNE ---
-
 def get_group_labels():
-    return [chr(i) for i in range(65, 73)]  # Generuje listę ['A', 'B', ..., 'H']
+    return [chr(i) for i in range(65, 73)]  # ['A', 'B', ..., 'H']
 
 def fetch_live_data():
     """Pobiera dane ze strony VolleyStation"""
@@ -23,7 +22,6 @@ def fetch_live_data():
     }
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        # Próba odczytania tabel (VolleyStation zazwyczaj trzyma je w tagach table)
         tables = pd.read_html(response.text)
         return tables
     except Exception as e:
@@ -31,26 +29,21 @@ def fetch_live_data():
         return None
 
 def calculate_points(row):
-    """Zasady punktacji: 3 pkt za wygraną, 0 za przegraną"""
     return row['Wygrane'] * 3
 
 def sort_group(df):
-    """Sortowanie: Punkty -> Stosunek Setów"""
     temp_df = df.copy()
     temp_df['Punkty'] = temp_df.apply(calculate_points, axis=1)
-    # Unikamy dzielenia przez zero przy stosunku setów
     temp_df['Stosunek'] = temp_df.apply(lambda x: x['Sety+'] / max(x['Sety-'], 1), axis=1)
     temp_df = temp_df.sort_values(['Punkty', 'Stosunek'], ascending=[False, False])
     return temp_df.reset_index(drop=True)
 
 def get_position_color(pos):
-    """Kolorowanie top 2 miejsc awansujących"""
-    if pos == 0: return 'background-color: #d4edda' # Zielony
-    if pos == 1: return 'background-color: #d1ecf1' # Niebieski
+    if pos == 0: return 'background-color: #d4edda'  # Zielony
+    if pos == 1: return 'background-color: #d1ecf1'  # Niebieski
     return ''
 
 # --- INICJALIZACJA DANYCH ---
-
 group_labels = get_group_labels()
 
 if 'groups' not in st.session_state:
@@ -66,31 +59,26 @@ if 'groups' not in st.session_state:
         })
 
 # --- INTERFEJS UŻYTKOWNIKA ---
-
 st.title("🏐 Mistrzostwa Polski Juniorów - Siatkówka")
 st.markdown("System obsługujący **8 grup po 6 zespołów** z aktualizacją live.")
 
-# Pasek boczny z odświeżaniem
+# Pasek boczny
 with st.sidebar:
     st.header("Ustawienia Live")
     if st.button("🔄 Pobierz wyniki z VolleyStation", use_container_width=True):
         data = fetch_live_data()
         if data:
-            # Zakładamy mapowanie tabel po kolei do grup A-H
             for i, label in enumerate(group_labels):
                 if i < len(data):
-                    # Proste dopasowanie kolumn (wymaga weryfikacji ze strukturą tabeli na stronie)
-                    st.session_state.groups[label] = data[i].iloc[:6, :6] 
+                    st.session_state.groups[label] = data[i].iloc[:6, :6]
             st.success("Zaktualizowano dane!")
 
-# Taby
+# --- Taby ---
 tab1, tab2, tab3 = st.tabs(["📊 Wszystkie Grupy (A-H)", "✏️ Edycja Ręczna", "🏆 Drabinka"])
 
 with tab1:
-    # Wyświetlanie grup w gridzie (2 kolumny)
     for row in range(0, 8, 2):
         col1, col2 = st.columns(2)
-        
         for i, col in enumerate([col1, col2]):
             current_g = group_labels[row + i]
             with col:
@@ -98,7 +86,6 @@ with tab1:
                 df_sorted = sort_group(st.session_state.groups[current_g])
                 df_display = df_sorted.copy()
                 df_display.insert(0, 'Poz', range(1, len(df_display) + 1))
-                
                 st.dataframe(
                     df_display.style.apply(lambda x: [get_position_color(i) for i in range(len(x))], axis=0, subset=['Poz', 'Drużyna']),
                     hide_index=True,
@@ -108,14 +95,11 @@ with tab1:
 with tab2:
     st.markdown("### ✏️ Panel Administratora")
     selected_g = st.selectbox("Wybierz grupę do edycji:", group_labels)
-    
-    # Edytor tabeli na żywo
     edited_df = st.data_editor(
         st.session_state.groups[selected_g],
         num_rows="fixed",
         use_container_width=True
     )
-    
     if st.button(f"💾 Zapisz zmiany dla Grupy {selected_g}"):
         st.session_state.groups[selected_g] = edited_df
         st.toast("Zmiany zapisane!")
@@ -123,11 +107,9 @@ with tab2:
 with tab3:
     st.markdown("### 🏆 Symulacja Fazy Pucharowej")
     st.info("Automatyczne parowanie zwycięzców grup (Top 2 z każdej grupy).")
-    
-    # Pobranie liderów
     leaders = {g: sort_group(st.session_state.groups[g]).iloc[0]['Drużyna'] for g in group_labels}
     runners_up = {g: sort_group(st.session_state.groups[g]).iloc[1]['Drużyna'] for g in group_labels}
-    
+
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.markdown("**Para 1**")
@@ -142,6 +124,5 @@ with tab3:
         st.markdown("**Para 4**")
         st.code(f"{leaders['G']} vs {runners_up['H']}")
 
-# Stopka
 st.divider()
 st.caption("Mistrzostwa Polski Juniorów 2026 | Dane pobierane z juniorzymmp.volleystation.com")
