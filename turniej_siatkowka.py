@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # --- 1. KONFIGURACJA STRONY ---
-st.set_page_config(page_title="MP Juniorów - System Wyników", layout="wide")
+st.set_page_config(page_title="MP Juniorów - Livescore", layout="wide")
 
 # --- 2. FUNKCJE POMOCNICZE ---
 def get_group_labels():
@@ -63,14 +63,19 @@ def get_sorted_subgroup(gid, pid):
     temp['P_Ratio'] = temp['Pkt+'] / temp['Pkt-'].replace(0, 0.1)
     return temp.sort_values(['Punkty', 'Wygrane', 'S_Ratio', 'P_Ratio'], ascending=False)
 
-# --- 4. INTERFEJS ---
-st.title("🏐 System MP Juniorów")
+def style_row(row):
+    color = '#a8c4e2' if row['Miejsce'] <= 2 else '#f7c27b'
+    return [f'background-color: {color}; color: black; font-weight: bold' if col in ['Miejsce', 'Drużyna'] else '' for col in row.index]
+
+# --- 5. INTERFEJS ---
+st.title("🏐 System MP Juniorów - Livescore")
 update_tables()
 
 tab1, tab2, tab3 = st.tabs(["📊 Tabele i Wyniki", "🏆 Faza Pucharowa", "✏️ Zarządzanie"])
 
 with tab1:
     for g in get_group_labels():
+        # Wyświetlanie nazwy grupy z session_state
         st.header(st.session_state.group_names[g])
         cols = st.columns(2)
         for i, col in enumerate(cols):
@@ -79,7 +84,8 @@ with tab1:
             sub_display.insert(0, 'Miejsce', range(1, 4))
             with col:
                 st.subheader(f"Podgrupa {i+1}")
-                st.dataframe(sub_display, hide_index=True, use_container_width=True)
+                st.dataframe(sub_display.style.apply(style_row, axis=1), hide_index=True, use_container_width=True)
+                
                 teams_in_sub = sub['Drużyna'].tolist()
                 sub_m = st.session_state.matches[(st.session_state.matches['Grupa'] == g) & (st.session_state.matches['Gospodarz'].isin(teams_in_sub))]
                 for _, m in sub_m.iterrows():
@@ -105,23 +111,28 @@ with tab2:
                 st.markdown("#### 🏆 Finały")
                 st.write(f"**O 5 MIEJSCE:** {t1_3} vs {t2_3}")
                 st.write(f"**FINAŁ GRUPY:** {w1} vs {w2}")
-                st.text_input("Wynik Finału (tekstowo)", key=f"f_res_{g}")
+                st.text_input("Wynik Finału", key=f"f_res_{g}")
 
 with tab3:
-    st.subheader("Ustawienia Grup i Drużyn")
+    st.subheader("⚙️ Ustawienia Grupy")
     sel_g = st.selectbox("Wybierz grupę do edycji:", get_group_labels())
     
-    # Zmiana nazwy grupy
-    new_group_name = st.text_input("Nazwa grupy (np. Grupa Młodziczek):", st.session_state.group_names[sel_g])
-    st.session_state.group_names[sel_g] = new_group_name
-    
-    # Edycja drużyn
-    st.write("Edytuj nazwy drużyn w tabeli poniżej (zespoły 1-3 to Podgrupa 1, 4-6 to Podgrupa 2):")
+    # --- POPRAWKA NAZWY GRUPY ---
+    with st.container():
+        current_name = st.session_state.group_names[sel_g]
+        new_name = st.text_input(f"Zmień nazwę dla {sel_g}:", value=current_name)
+        if st.button("Zapisz nową nazwę grupy"):
+            st.session_state.group_names[sel_g] = new_name
+            st.success(f"Zmieniono nazwę na: {new_name}")
+            st.rerun()
+
+    # --- EDYCJA DRUŻYN ---
+    st.write("Edytuj nazwy drużyn (Pamiętaj o Enterze!):")
     edited_df = st.data_editor(st.session_state.groups[sel_g], hide_index=True, use_container_width=True)
     st.session_state.groups[sel_g] = edited_df
 
     st.divider()
-    st.subheader("Wpisz wynik meczu grupowego")
+    st.subheader("📝 Dodaj Wynik")
     with st.form("m_form"):
         teams_list = st.session_state.groups[sel_g]['Drużyna'].tolist()
         c1, c2 = st.columns(2)
@@ -131,11 +142,12 @@ with tab3:
         pts = []
         for j in range(5):
             with p_cols[j]:
-                pts.extend([st.number_input(f"S{j+1}-G",0,45,0,key=f"p1{j}{sel_g}"), st.number_input(f"S{j+1}-H",0,45,0,key=f"p2{j}{sel_g}")])
+                pts.extend([st.number_input(f"S{j+1}-G",0,45,0,key=f"p1{j}{sel_g}"), 
+                           st.number_input(f"S{j+1}-H",0,45,0,key=f"p2{j}{sel_g}")])
         if st.form_submit_button("Zapisz Mecz"):
             st.session_state.matches.loc[len(st.session_state.matches)] = [sel_g, d1, d2] + pts
             st.rerun()
 
-    if st.button("🔴 RESET WSZYSTKIEGO"):
+    if st.button("🚨 RESETUJ WSZYSTKO"):
         st.session_state.clear()
         st.rerun()
