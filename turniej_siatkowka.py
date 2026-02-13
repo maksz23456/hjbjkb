@@ -45,6 +45,7 @@ def update_tables():
         for _, m in group_matches.iterrows():
             s1, s2, p1_m, p2_m, _ = calculate_match_details(m)
             if s1 == 3 or s2 == 3:
+                # Punktacja: 3:0/3:1 = 3pkt, 3:2 = 2pkt, 2:3 = 1pkt, 1:3/0:3 = 0pkt
                 pts1, pts2 = (3, 0) if s1 == 3 and s2 < 2 else ((2, 1) if s1 == 3 and s2 == 2 else ((1, 2) if s2 == 3 and s1 == 2 else (0, 3)))
                 for t, sp, sm, pp, pm, p_pts, win in [(m['Gospodarz'], s1, s2, p1_m, p2_m, pts1, s1>s2), (m['Gość'], s2, s1, p2_m, p1_m, pts2, s2>s1)]:
                     idx = df[df['Drużyna'] == t].index
@@ -100,15 +101,10 @@ with tab3:
 
     st.divider()
 
-    # --- POPRAWKA SZEROKOŚCI KOLUMNY ---
     st.info("Wpisz nazwy drużyn. Kolumna 'Drużyna' jest teraz maksymalnie szeroka.")
     
     column_configuration = {
-        "Drużyna": st.column_config.TextColumn(
-            "Pełna Nazwa Drużyny", 
-            width="extra-large",  # MAKSYMALNA SZEROKOŚĆ
-            required=True
-        ),
+        "Drużyna": st.column_config.TextColumn("Pełna Nazwa Drużyny", width="extra-large", required=True),
         "Podgrupa_ID": st.column_config.NumberColumn("Podgrupa", disabled=True)
     }
     
@@ -118,31 +114,47 @@ with tab3:
         hide_index=True,
         use_container_width=True,
         height=260,
-        key=f"editor_v3_{sel_g}",
+        key=f"editor_final_{sel_g}",
         disabled=("Mecze", "Punkty", "Wygrane", "Sety+", "Sety-", "Pkt+", "Pkt-")
     )
 
     if st.button(f"✅ ZAPISZ DRUŻYNY DLA GRUPY {sel_g}"):
         st.session_state.groups[sel_g] = edited_df
-        st.success(f"Zapisano zmiany w grupie {sel_g}!")
         st.rerun()
 
     st.divider()
-    st.subheader("📝 Dodaj Mecz")
-    with st.form(f"form_final_{sel_g}"):
+    st.subheader("📝 Dodaj Wynik Meczu")
+    with st.form(f"form_v4_{sel_g}"):
         current_teams = st.session_state.groups[sel_g]['Drużyna'].tolist()
         c1, c2 = st.columns(2)
-        d1 = c1.selectbox("Gospodarz", current_teams)
-        d2 = c2.selectbox("Gość", [t for t in current_teams if t != d1])
+        d1 = c1.selectbox("Gospodarz (H)", current_teams)
+        d2 = c2.selectbox("Gość (G)", [t for t in current_teams if t != d1])
+        
+        st.write("**Wyniki w setach:**")
         p_cols = st.columns(5)
         scores = []
         for j in range(5):
             with p_cols[j]:
-                scores.extend([st.number_input(f"S{j+1}-G", 0, 45, 0, key=f"scr1_{j}_{sel_g}"), 
-                              st.number_input(f"S{j+1}-H", 0, 45, 0, key=f"scr2_{j}_{sel_g}")])
-        if st.form_submit_button("Dodaj Wynik"):
-            st.session_state.matches.loc[len(st.session_state.matches)] = [sel_g, d1, d2] + scores
-            st.rerun()
+                label = f"S{j+1}" if j < 4 else "S5 (do 15)"
+                # Ustawienie max_value na 45, aby pozwolić na grę na przewagi
+                s_h = st.number_input(f"{label}-H", 0, 45, 0, key=f"v4_h_{j}_{sel_g}")
+                s_g = st.number_input(f"{label}-G", 0, 45, 0, key=f"v4_g_{j}_{sel_g}")
+                scores.extend([s_h, s_g])
+                
+        if st.form_submit_button("Dodaj Wynik Meczu"):
+            # Obliczanie setów, żeby sprawdzić czy mecz się zakończył (3 wygrane)
+            s_h_total = 0
+            s_g_total = 0
+            for i in range(0, 10, 2):
+                if scores[i] > scores[i+1]: s_h_total += 1
+                elif scores[i+1] > scores[i]: s_g_total += 1
+            
+            if s_h_total == 3 or s_g_total == 3:
+                st.session_state.matches.loc[len(st.session_state.matches)] = [sel_g, d1, d2] + scores
+                st.success(f"Mecz dodany! Wynik: {s_h_total}:{s_g_total}")
+                st.rerun()
+            else:
+                st.error("Mecz musi zakończyć się wynikiem 3:X lub X:3 (wygrane 3 sety).")
 
     if st.button("🚨 TOTALNY RESET"):
         st.session_state.clear()
