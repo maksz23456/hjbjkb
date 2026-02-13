@@ -1,7 +1,7 @@
 streamlit==1.32.0
 pandas==2.2.0
-beautifulsoup4
-lxml
 requests
+lxml
+beautifulsoup4
 
 
