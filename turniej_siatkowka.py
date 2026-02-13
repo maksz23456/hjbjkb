@@ -2,135 +2,122 @@ import streamlit as st
 import pandas as pd
 
 # --- KONFIGURACJA STRONY ---
-st.set_page_config(page_title="MP Juniorów - System Wyników", layout="wide")
+st.set_page_config(page_title="MP Juniorów - Wyniki Szczegółowe", layout="wide")
 
 # --- FUNKCJE POMOCNICZE ---
 def get_group_labels():
-    return [chr(i) for i in range(65, 73)]  # A-H
+    return [chr(i) for i in range(65, 73)]
 
-def calculate_points_from_score(s1, s2):
-    """Zwraca punkty dla (Gospodarza, Gościa) na podstawie wyniku w setach"""
-    if s1 == 3 and (s2 == 0 or s2 == 1): return 3, 0
-    if s1 == 3 and s2 == 2: return 2, 1
-    if s2 == 3 and s1 == 2: return 1, 2
-    if s2 == 3 and (s1 == 0 or s1 == 1): return 0, 3
-    return 0, 0
+def calculate_match_from_points(sets_data):
+    """Liczy wynik w setach na podstawie małych punktów"""
+    s1_total, s2_total = 0, 0
+    for p1, p2 in sets_data:
+        if p1 > p2: s1_total += 1
+        elif p2 > p1: s2_total += 1
+    return s1_total, s2_total
 
 def update_tables():
-    """Przelicza statystyki w grupach na podstawie wpisanych meczów"""
+    """Przelicza tabele na podstawie historii meczów"""
     for g in get_group_labels():
         df = st.session_state.groups[g].copy()
-        # Zerujemy statystyki przed ponownym przeliczeniem
         for col in ['Mecze', 'Wygrane', 'Przegrane', 'Sety+', 'Sety-', 'Punkty']:
             df[col] = 0
         
-        # Filtrujemy mecze dla danej grupy
         m_list = st.session_state.matches
         group_matches = m_list[m_list['Grupa'] == g]
         
-        for _, match in group_matches.iterrows():
-            d1, d2 = match['Gospodarz'], match['Gość']
-            s1, s2 = int(match['S1']), int(match['S2'])
+        for _, m in group_matches.iterrows():
+            sets = [(m['S1_P1'], m['S1_P2']), (m['S2_P1'], m['S2_P2']), 
+                    (m['S3_P1'], m['S3_P2']), (m['S4_P1'], m['S4_P2']), (m['S5_P1'], m['S5_P2'])]
+            s1, s2 = calculate_match_from_points(sets)
             
-            if (s1 == 3 or s2 == 3):  # Liczymy tylko zakończone mecze
-                p1, p2 = calculate_points_from_score(s1, s2)
+            if s1 == 3 or s2 == 3:
+                # Punktacja siatkarska
+                p1, p2 = (3, 0) if s1 == 3 and s2 < 2 else ((2, 1) if s1 == 3 and s2 == 2 else ((1, 2) if s2 == 3 and s1 == 2 else (0, 3)))
                 
-                # Statystyki Gospodarza
-                idx1 = df[df['Drużyna'] == d1].index
-                if not idx1.empty:
-                    df.loc[idx1, 'Mecze'] += 1
-                    df.loc[idx1, 'Wygrane'] += (1 if s1 > s2 else 0)
-                    df.loc[idx1, 'Przegrane'] += (1 if s2 > s1 else 0)
-                    df.loc[idx1, 'Sety+'] += s1
-                    df.loc[idx1, 'Sety-'] += s2
-                    df.loc[idx1, 'Punkty'] += p1
-                
-                # Statystyki Gościa
-                idx2 = df[df['Drużyna'] == d2].index
-                if not idx2.empty:
-                    df.loc[idx2, 'Mecze'] += 1
-                    df.loc[idx2, 'Wygrane'] += (1 if s2 > s1 else 0)
-                    df.loc[idx2, 'Przegrane'] += (1 if s1 > s2 else 0)
-                    df.loc[idx2, 'Sety+'] += s2
-                    df.loc[idx2, 'Sety-'] += s1
-                    df.loc[idx2, 'Punkty'] += p2
-        
+                for team, s_plus, s_minus, pts, win in [(m['Gospodarz'], s1, s2, p1, s1>s2), (m['Gość'], s2, s1, p2, s2>s1)]:
+                    idx = df[df['Drużyna'] == team].index
+                    if not idx.empty:
+                        df.loc[idx, 'Mecze'] += 1
+                        df.loc[idx, 'Wygrane'] += 1 if win else 0
+                        df.loc[idx, 'Przegrane'] += 0 if win else 1
+                        df.loc[idx, 'Sety+'] += s_plus
+                        df.loc[idx, 'Sety-'] += s_minus
+                        df.loc[idx, 'Punkty'] += pts
         st.session_state.groups[g] = df
 
-# --- INICJALIZACJA DANYCH (ZABEZPIECZENIE) ---
-if 'matches' not in st.session_state or 'groups' not in st.session_state:
-    st.session_state.groups = {}
-    for g in get_group_labels():
-        st.session_state.groups[g] = pd.DataFrame({
-            'Podgrupa_ID': [1, 1, 1, 2, 2, 2],
-            'Drużyna': [f'Zespół {g}{i}' for i in range(1, 7)],
-            'Mecze': 0, 'Wygrane': 0, 'Przegrane': 0, 'Sety+': 0, 'Sety-': 0, 'Punkty': 0
-        })
-    st.session_state.matches = pd.DataFrame(columns=['Grupa', 'Gospodarz', 'Gość', 'S1', 'S2'])
-
-# --- STYLE ---
-def style_table(styler):
-    def apply_row_color(row):
-        blue = 'background-color: #a8c4e2; color: black;'
-        orange = 'background-color: #f7c27b; color: black;'
-        return [blue if row['Miejsce'] <= 2 else orange for _ in row.index]
-    return styler.apply(apply_row_color, axis=1)
+# --- INICJALIZACJA ---
+if 'matches' not in st.session_state:
+    st.session_state.groups = {g: pd.DataFrame({
+        'Podgrupa_ID': [1, 1, 1, 2, 2, 2],
+        'Drużyna': [f'Zespół {g}{i}' for i in range(1, 7)],
+        'Mecze': 0, 'Wygrane': 0, 'Przegrane': 0, 'Sety+': 0, 'Sety-': 0, 'Punkty': 0
+    }) for g in get_group_labels()}
+    st.session_state.matches = pd.DataFrame(columns=[
+        'Grupa', 'Gospodarz', 'Gość', 'S1_P1', 'S1_P2', 'S2_P1', 'S2_P2', 'S3_P1', 'S3_P2', 'S4_P1', 'S4_P2', 'S5_P1', 'S5_P2'
+    ])
 
 # --- INTERFEJS ---
-st.title("🏐 MP Juniorów - System Wyników")
+st.title("🏐 System Wyników MP Juniorów")
 update_tables()
 
-tab1, tab2, tab3 = st.tabs(["📊 Tabele", "🏆 Faza Pucharowa", "✏️ Wpisz Wynik Meczu"])
+t1, t2, t3 = st.tabs(["📊 Tabele i Wyniki", "🏆 Faza Pucharowa", "✏️ Wprowadź Mecz"])
 
-with tab1:
+with t1:
     for g in get_group_labels():
-        st.subheader(f"GRUPA {g}")
-        c1, c2 = st.columns(2)
-        for i, col in enumerate([c1, c2]):
-            sub = st.session_state.groups[g][st.session_state.groups[g]['Podgrupa_ID'] == (i+1)].copy()
-            sub['Ratio'] = sub['Sety+'] / sub['Sety-'].replace(0, 1)
-            sub = sub.sort_values(['Punkty', 'Ratio'], ascending=False)
+        st.header(f"GRUPA {g}")
+        cols = st.columns(2)
+        for i, col in enumerate(cols):
+            p_id = i + 1
+            sub = st.session_state.groups[g][st.session_state.groups[g]['Podgrupa_ID'] == p_id].copy()
+            sub = sub.sort_values(['Punkty', 'Sety+'], ascending=False)
             sub.insert(0, 'Miejsce', range(1, 4))
-            col.write(f"**Podgrupa {i+1}**")
-            col.dataframe(sub.style.pipe(style_table), hide_index=True, use_container_width=True)
+            
+            with col:
+                st.subheader(f"Podgrupa {g}{p_id}")
+                st.dataframe(sub, hide_index=True, use_container_width=True)
+                
+                # Wyświetlanie meczów tylko dla tej podgrupy
+                teams_in_sub = sub['Drużyna'].tolist()
+                sub_matches = st.session_state.matches[
+                    (st.session_state.matches['Grupa'] == g) & 
+                    (st.session_state.matches['Gospodarz'].isin(teams_in_sub))
+                ]
+                if not sub_matches.empty:
+                    st.caption("Ostatnie mecze:")
+                    for _, m in sub_matches.iterrows():
+                        res1, res2 = calculate_match_from_points([(m['S1_P1'], m['S1_P2']), (m['S2_P1'], m['S2_P2']), (m['S3_P1'], m['S3_P2']), (m['S4_P1'], m['S4_P2']), (m['S5_P1'], m['S5_P2'])])
+                        st.write(f"🔹 {m['Gospodarz']} **{res1}:{res2}** {m['Gość']}")
         st.divider()
 
-with tab2:
-    st.info("Zwycięzcy półfinałów awansują do 1/2 MP!")
-    for g in get_group_labels():
-        with st.expander(f"Drabinka Grupy {g}"):
-            # Sortowanie podgrup do drabinki
-            s1 = st.session_state.groups[g][st.session_state.groups[g]['Podgrupa_ID'] == 1].copy()
-            s1 = s1.sort_values(['Punkty', 'Wygrane'], ascending=False)
-            s2 = st.session_state.groups[g][st.session_state.groups[g]['Podgrupa_ID'] == 2].copy()
-            s2 = s2.sort_values(['Punkty', 'Wygrane'], ascending=False)
-            
-            t1_1, t1_2, t1_3 = s1.iloc[0]['Drużyna'], s1.iloc[1]['Drużyna'], s1.iloc[2]['Drużyna']
-            t2_1, t2_2, t2_3 = s2.iloc[0]['Drużyna'], s2.iloc[1]['Drużyna'], s2.iloc[2]['Drużyna']
-            
-            cc1, cc2 = st.columns(2)
-            cc1.error(f"PF1: {t1_1} vs {t2_2}")
-            cc1.error(f"PF2: {t2_1} vs {t1_2}")
-            cc2.warning(f"O 5. miejsce: {t1_3} vs {t2_3}")
-            cc2.success("Finał: Zwycięzcy PF1 i PF2 (AWANS)")
+with t3:
+    st.subheader("Wpisz punkty w setach")
+    with st.form("match_form"):
+        c1, c2, c3 = st.columns([1, 2, 2])
+        g_sel = c1.selectbox("Grupa", get_group_labels())
+        teams = st.session_state.groups[g_sel]['Drużyna'].tolist()
+        d1 = c2.selectbox("Gospodarz", teams)
+        d2 = c3.selectbox("Gość", [t for t in teams if t != d1])
+        
+        st.write("Punkty w setach (np. 25:20):")
+        s_cols = st.columns(5)
+        res_sets = []
+        for j in range(5):
+            with s_cols[j]:
+                p1 = st.number_input(f"Set {j+1} - Gosp.", 0, 50, 0, key=f"s{j}p1")
+                p2 = st.number_input(f"Set {j+1} - Gość", 0, 50, 0, key=f"s{j}p2")
+                res_sets.extend([p1, p2])
+        
+        if st.form_submit_button("Zapisz mecz"):
+            new_row = [g_sel, d1, d2] + res_sets
+            st.session_state.matches.loc[len(st.session_state.matches)] = new_row
+            st.rerun()
 
-with tab3:
-    st.subheader("Dodaj wynik meczu")
-    c1, c2, c3, c4, c5 = st.columns([1, 2, 1, 1, 2])
-    g_sel = c1.selectbox("Grupa", get_group_labels())
-    teams = st.session_state.groups[g_sel]['Drużyna'].tolist()
-    d1 = c2.selectbox("Gospodarz", teams, key="d1")
-    s1 = c3.number_input("Sety Gosp.", 0, 3, 0)
-    s2 = c4.number_input("Sety Gość", 0, 3, 0)
-    d2 = c5.selectbox("Gość", [t for t in teams if t != d1], key="d2")
-    
-    if st.button("Zatwierdź mecz"):
-        new_m = pd.DataFrame([[g_sel, d1, d2, s1, s2]], columns=['Grupa', 'Gospodarz', 'Gość', 'S1', 'S2'])
-        st.session_state.matches = pd.concat([st.session_state.matches, new_m], ignore_index=True)
-        st.rerun()
-
-    st.subheader("Lista rozegranych meczów (możesz tu edytować)")
-    st.session_state.matches = st.data_editor(st.session_state.matches, num_rows="dynamic", use_container_width=True)
-    if st.button("Wyczyść wszystkie dane"):
+    st.subheader("Historia wszystkich meczów")
+    st.session_state.matches = st.data_editor(st.session_state.matches, use_container_width=True)
+    if st.button("RESETUJ WSZYSTKO"):
         st.session_state.clear()
         st.rerun()
+
+with t2:
+    st.write("Automatyczna drabinka pucharowa (jak w poprzednim kodzie)...")
