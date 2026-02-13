@@ -1,230 +1,147 @@
 import streamlit as st
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 
-# Konfiguracja strony
+# --- KONFIGURACJA STRONY ---
 st.set_page_config(
-    page_title="Mistrzostwa Polski Juniorów - Siatkówka",
+    page_title="MP Juniorów - Wyniki Live",
     page_icon="🏐",
     layout="wide"
 )
 
-# Inicjalizacja session state
-if 'groups' not in st.session_state:
-    st.session_state.groups = {
-        'A': pd.DataFrame({
-            'Drużyna': ['Drużyna A1', 'Drużyna A2', 'Drużyna A3', 'Drużyna A4'],
-            'Mecze': [0, 0, 0, 0],
-            'Wygrane': [0, 0, 0, 0],
-            'Przegrane': [0, 0, 0, 0],
-            'Sety+': [0, 0, 0, 0],
-            'Sety-': [0, 0, 0, 0],
-            'Punkty': [0, 0, 0, 0]
-        }),
-        'B': pd.DataFrame({
-            'Drużyna': ['Drużyna B1', 'Drużyna B2', 'Drużyna B3', 'Drużyna B4'],
-            'Mecze': [0, 0, 0, 0],
-            'Wygrane': [0, 0, 0, 0],
-            'Przegrane': [0, 0, 0, 0],
-            'Sety+': [0, 0, 0, 0],
-            'Sety-': [0, 0, 0, 0],
-            'Punkty': [0, 0, 0, 0]
-        })
+# --- FUNKCJE LOGICZNE ---
+
+def get_group_labels():
+    return [chr(i) for i in range(65, 73)]  # Generuje listę ['A', 'B', ..., 'H']
+
+def fetch_live_data():
+    """Pobiera dane ze strony VolleyStation"""
+    url = "https://juniorzymmp.volleystation.com/en/"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        # Próba odczytania tabel (VolleyStation zazwyczaj trzyma je w tagach table)
+        tables = pd.read_html(response.text)
+        return tables
+    except Exception as e:
+        st.error(f"Nie udało się pobrać danych automatycznie: {e}")
+        return None
 
 def calculate_points(row):
-    """Oblicza punkty: 3 za wygraną, 0 za przegraną"""
+    """Zasady punktacji: 3 pkt za wygraną, 0 za przegraną"""
     return row['Wygrane'] * 3
 
 def sort_group(df):
-    """Sortuje grupę według punktów, potem stosunku setów"""
-    df['Punkty'] = df.apply(calculate_points, axis=1)
-    df['Stosunek'] = df.apply(lambda x: x['Sety+'] / max(x['Sety-'], 1), axis=1)
-    df = df.sort_values(['Punkty', 'Stosunek'], ascending=[False, False])
-    df = df.reset_index(drop=True)
-    return df
+    """Sortowanie: Punkty -> Stosunek Setów"""
+    temp_df = df.copy()
+    temp_df['Punkty'] = temp_df.apply(calculate_points, axis=1)
+    # Unikamy dzielenia przez zero przy stosunku setów
+    temp_df['Stosunek'] = temp_df.apply(lambda x: x['Sety+'] / max(x['Sety-'], 1), axis=1)
+    temp_df = temp_df.sort_values(['Punkty', 'Stosunek'], ascending=[False, False])
+    return temp_df.reset_index(drop=True)
 
 def get_position_color(pos):
-    """Zwraca kolor tła dla pozycji w tabeli"""
-    if pos == 0:
-        return 'background-color: #d4edda'  # zielony dla 1. miejsca
-    elif pos == 1:
-        return 'background-color: #d1ecf1'  # niebieski dla 2. miejsca
-    else:
-        return ''
+    """Kolorowanie top 2 miejsc awansujących"""
+    if pos == 0: return 'background-color: #d4edda' # Zielony
+    if pos == 1: return 'background-color: #d1ecf1' # Niebieski
+    return ''
 
-# Nagłówek
+# --- INICJALIZACJA DANYCH ---
+
+group_labels = get_group_labels()
+
+if 'groups' not in st.session_state:
+    st.session_state.groups = {}
+    for g in group_labels:
+        st.session_state.groups[g] = pd.DataFrame({
+            'Drużyna': [f'Zespół {g}{i}' for i in range(1, 7)],
+            'Mecze': [0]*6,
+            'Wygrane': [0]*6,
+            'Przegrane': [0]*6,
+            'Sety+': [0]*6,
+            'Sety-': [0]*6
+        })
+
+# --- INTERFEJS UŻYTKOWNIKA ---
+
 st.title("🏐 Mistrzostwa Polski Juniorów - Siatkówka")
-st.subheader("Faza grupowa - System playoff")
+st.markdown("System obsługujący **8 grup po 6 zespołów** z aktualizacją live.")
 
-# Tabs dla różnych sekcji
-tab1, tab2, tab3 = st.tabs(["📊 Tabele grup", "✏️ Edycja wyników", "🏆 Faza pucharowa"])
+# Pasek boczny z odświeżaniem
+with st.sidebar:
+    st.header("Ustawienia Live")
+    if st.button("🔄 Pobierz wyniki z VolleyStation", use_container_width=True):
+        data = fetch_live_data()
+        if data:
+            # Zakładamy mapowanie tabel po kolei do grup A-H
+            for i, label in enumerate(group_labels):
+                if i < len(data):
+                    # Proste dopasowanie kolumn (wymaga weryfikacji ze strukturą tabeli na stronie)
+                    st.session_state.groups[label] = data[i].iloc[:6, :6] 
+            st.success("Zaktualizowano dane!")
+
+# Taby
+tab1, tab2, tab3 = st.tabs(["📊 Wszystkie Grupy (A-H)", "✏️ Edycja Ręczna", "🏆 Drabinka"])
 
 with tab1:
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### 🔵 Grupa A")
-        df_a = sort_group(st.session_state.groups['A'].copy())
+    # Wyświetlanie grup w gridzie (2 kolumny)
+    for row in range(0, 8, 2):
+        col1, col2 = st.columns(2)
         
-        # Dodaj pozycje
-        df_a.insert(0, 'Poz', range(1, len(df_a) + 1))
-        
-        # Wyświetl tabelę z kolorami
-        st.dataframe(
-            df_a.style.apply(lambda x: [get_position_color(i) for i in range(len(x))], axis=0),
-            hide_index=True,
-            use_container_width=True
-        )
-        
-        st.markdown("🥇 1. miejsce → Półfinał  \n🥈 2. miejsce → Półfinał")
-    
-    with col2:
-        st.markdown("### 🟢 Grupa B")
-        df_b = sort_group(st.session_state.groups['B'].copy())
-        
-        # Dodaj pozycje
-        df_b.insert(0, 'Poz', range(1, len(df_b) + 1))
-        
-        st.dataframe(
-            df_b.style.apply(lambda x: [get_position_color(i) for i in range(len(x))], axis=0),
-            hide_index=True,
-            use_container_width=True
-        )
-        
-        st.markdown("🥇 1. miejsce → Półfinał  \n🥈 2. miejsce → Półfinał")
+        for i, col in enumerate([col1, col2]):
+            current_g = group_labels[row + i]
+            with col:
+                st.markdown(f"### Grupa {current_g}")
+                df_sorted = sort_group(st.session_state.groups[current_g])
+                df_display = df_sorted.copy()
+                df_display.insert(0, 'Poz', range(1, len(df_display) + 1))
+                
+                st.dataframe(
+                    df_display.style.apply(lambda x: [get_position_color(i) for i in range(len(x))], axis=0, subset=['Poz', 'Drużyna']),
+                    hide_index=True,
+                    use_container_width=True
+                )
 
 with tab2:
-    st.markdown("### ✏️ Edytuj wyniki drużyn")
+    st.markdown("### ✏️ Panel Administratora")
+    selected_g = st.selectbox("Wybierz grupę do edycji:", group_labels)
     
-    group_choice = st.selectbox("Wybierz grupę:", ["A", "B"])
+    # Edytor tabeli na żywo
+    edited_df = st.data_editor(
+        st.session_state.groups[selected_g],
+        num_rows="fixed",
+        use_container_width=True
+    )
     
-    df_edit = st.session_state.groups[group_choice].copy()
-    team_choice = st.selectbox("Wybierz drużynę:", df_edit['Drużyna'].tolist())
-    
-    team_idx = df_edit[df_edit['Drużyna'] == team_choice].index[0]
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        new_name = st.text_input("Nazwa drużyny:", value=team_choice)
-        matches = st.number_input("Liczba meczów:", min_value=0, value=int(df_edit.loc[team_idx, 'Mecze']), step=1)
-        wins = st.number_input("Wygrane:", min_value=0, max_value=matches, value=int(df_edit.loc[team_idx, 'Wygrane']), step=1)
-    
-    with col2:
-        losses = st.number_input("Przegrane:", min_value=0, max_value=matches, value=int(df_edit.loc[team_idx, 'Przegrane']), step=1)
-        sets_won = st.number_input("Sety wygrane:", min_value=0, value=int(df_edit.loc[team_idx, 'Sety+']), step=1)
-    
-    with col3:
-        sets_lost = st.number_input("Sety przegrane:", min_value=0, value=int(df_edit.loc[team_idx, 'Sety-']), step=1)
-    
-    if st.button("💾 Zapisz zmiany", type="primary"):
-        st.session_state.groups[group_choice].loc[team_idx, 'Drużyna'] = new_name
-        st.session_state.groups[group_choice].loc[team_idx, 'Mecze'] = matches
-        st.session_state.groups[group_choice].loc[team_idx, 'Wygrane'] = wins
-        st.session_state.groups[group_choice].loc[team_idx, 'Przegrane'] = losses
-        st.session_state.groups[group_choice].loc[team_idx, 'Sety+'] = sets_won
-        st.session_state.groups[group_choice].loc[team_idx, 'Sety-'] = sets_lost
-        st.success(f"✅ Zapisano zmiany dla {new_name}!")
-        st.rerun()
+    if st.button(f"💾 Zapisz zmiany dla Grupy {selected_g}"):
+        st.session_state.groups[selected_g] = edited_df
+        st.toast("Zmiany zapisane!")
 
 with tab3:
-    st.markdown("### 🏆 Drabinka Playoff")
+    st.markdown("### 🏆 Symulacja Fazy Pucharowej")
+    st.info("Automatyczne parowanie zwycięzców grup (Top 2 z każdej grupy).")
     
-    # Posortuj grupy
-    df_a_sorted = sort_group(st.session_state.groups['A'].copy())
-    df_b_sorted = sort_group(st.session_state.groups['B'].copy())
+    # Pobranie liderów
+    leaders = {g: sort_group(st.session_state.groups[g]).iloc[0]['Drużyna'] for g in group_labels}
+    runners_up = {g: sort_group(st.session_state.groups[g]).iloc[1]['Drużyna'] for g in group_labels}
     
-    # Pobierz drużyny
-    a1 = df_a_sorted.iloc[0]['Drużyna']
-    a2 = df_a_sorted.iloc[1]['Drużyna']
-    b1 = df_b_sorted.iloc[0]['Drużyna']
-    b2 = df_b_sorted.iloc[1]['Drużyna']
-    
-    # Półfinały
-    st.markdown("#### 🎯 Półfinały (system na skos)")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.info(f"""
-        **Półfinał 1**
-        
-        🥇 {a1} (1. Grupa A)
-        
-        **VS**
-        
-        🥈 {b2} (2. Grupa B)
-        """)
-    
-    with col2:
-        st.info(f"""
-        **Półfinał 2**
-        
-        🥇 {b1} (1. Grupa B)
-        
-        **VS**
-        
-        🥈 {a2} (2. Grupa A)
-        """)
-    
-    # Finały
-    st.markdown("#### 🏅 Dalsze mecze")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.success("""
-        **🥇 FINAŁ**
-        
-        Zwycięzcy Półfinału 1 vs Półfinału 2
-        """)
-        
-        st.warning("""
-        **🥉 Mecz o 3. miejsce**
-        
-        Przegrani Półfinału 1 vs Półfinału 2
-        """)
-    
-    with col2:
-        if len(df_a_sorted) >= 3 and len(df_b_sorted) >= 3:
-            a3 = df_a_sorted.iloc[2]['Drużyna']
-            b3 = df_b_sorted.iloc[2]['Drużyna']
-            st.info(f"""
-            **📍 Mecz o 5. miejsce**
-            
-            {a3} (3. Grupa A)
-            
-            **VS**
-            
-            {b3} (3. Grupa B)
-            """)
-        
-        if len(df_a_sorted) >= 4 and len(df_b_sorted) >= 4:
-            a4 = df_a_sorted.iloc[3]['Drużyna']
-            b4 = df_b_sorted.iloc[3]['Drużyna']
-            st.info(f"""
-            **📍 Mecz o 7. miejsce**
-            
-            {a4} (4. Grupa A)
-            
-            **VS**
-            
-            {b4} (4. Grupa B)
-            """)
-    
-    # Legenda
-    st.markdown("---")
-    st.markdown("""
-    ### 📋 System awansu:
-    
-    - ✅ **1. miejsca** z grup grają w półfinałach na skos (A1 vs B2, B1 vs A2)
-    - ✅ **2. miejsca** z grup również awansują do półfinałów
-    - 🏆 Zwycięzcy półfinałów grają w **FINALE**
-    - 🥉 Przegrani półfinałów grają o **3. miejsce**
-    - 📍 3. miejsca z grup grają o **5. miejsce**
-    - 📍 4. miejsca z grup grają o **7. miejsce**
-    """)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown("**Para 1**")
+        st.code(f"{leaders['A']} vs {runners_up['B']}")
+    with c2:
+        st.markdown("**Para 2**")
+        st.code(f"{leaders['C']} vs {runners_up['D']}")
+    with c3:
+        st.markdown("**Para 3**")
+        st.code(f"{leaders['E']} vs {runners_up['F']}")
+    with c4:
+        st.markdown("**Para 4**")
+        st.code(f"{leaders['G']} vs {runners_up['H']}")
 
 # Stopka
-st.markdown("---")
-st.markdown("*Aplikacja do zarządzania turniejem siatkarskim - Mistrzostwa Polski Juniorów* 🏐")
+st.divider()
+st.caption("Mistrzostwa Polski Juniorów 2026 | Dane pobierane z juniorzymmp.volleystation.com")
