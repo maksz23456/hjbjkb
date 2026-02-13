@@ -1,10 +1,14 @@
 import streamlit as st
 import pandas as pd
 
-# --- PAGE CONFIG ---
+# -------------------------------------------------
+# PAGE CONFIG
+# -------------------------------------------------
 st.set_page_config(page_title="MP Juniorów - Oficjalne Wyniki", layout="wide")
 
-# --- MODERN SPORT DESIGN ---
+# -------------------------------------------------
+# MODERN SPORT DESIGN
+# -------------------------------------------------
 st.markdown("""
 <style>
 .stApp {
@@ -61,8 +65,9 @@ h3 {
 </style>
 """, unsafe_allow_html=True)
 
-
-# --- DATA INIT ---
+# -------------------------------------------------
+# DATA INIT
+# -------------------------------------------------
 def get_group_labels():
     return [chr(i) for i in range(65, 73)]  # A-H
 
@@ -85,20 +90,27 @@ if 'matches' not in st.session_state:
     ])
 
 
-# --- CALC ENGINE ---
+# -------------------------------------------------
+# CALCULATION ENGINE
+# -------------------------------------------------
 def recalculate_everything():
     for g in get_group_labels():
         df = st.session_state.groups[g].copy()
+
         for col in ['Mecze','Punkty','Wygrane','Sety+','Sety-','Pkt+','Pkt-']:
             df[col] = 0
 
-        m_group = st.session_state.matches[st.session_state.matches['Grupa'] == g]
+        m_group = st.session_state.matches[
+            st.session_state.matches['Grupa'] == g
+        ]
 
         for _, m in m_group.iterrows():
             sh, sg, ph_t, pg_t = 0, 0, 0, 0
+
             for i in range(1, 6):
                 try:
-                    h, gp = int(m[f'S{i}_H']), int(m[f'S{i}_G'])
+                    h = int(m[f'S{i}_H'])
+                    gp = int(m[f'S{i}_G'])
                     ph_t += h
                     pg_t += gp
                     if h > gp:
@@ -109,6 +121,7 @@ def recalculate_everything():
                     continue
 
             if sh == 3 or sg == 3:
+
                 if sh == 3 and sg < 2:
                     p_h, p_g = 3, 0
                 elif sh == 3 and sg == 2:
@@ -144,19 +157,30 @@ def apply_final_style(row):
 
 recalculate_everything()
 
-# --- UI ---
+# -------------------------------------------------
+# UI
+# -------------------------------------------------
 st.markdown("<h1>🏐 Mistrzostwa Polski Juniorów</h1>", unsafe_allow_html=True)
 
 t1, t2 = st.tabs(["📊 TABELE", "⚙️ ADMIN"])
 
+# -------------------------------------------------
+# TABELE
+# -------------------------------------------------
 with t1:
     for g in get_group_labels():
         st.markdown(f"### {st.session_state.group_names[g]}")
 
-        total_matches = len(st.session_state.matches[st.session_state.matches['Grupa']==g])
+        total_matches = len(
+            st.session_state.matches[
+                st.session_state.matches['Grupa']==g
+            ]
+        )
+
         st.markdown(f"""
         <div style='background:linear-gradient(90deg,#2563eb,#06b6d4);
-        padding:10px;border-radius:12px;color:white;font-weight:600;text-align:center;margin-bottom:15px;'>
+        padding:10px;border-radius:12px;color:white;font-weight:600;
+        text-align:center;margin-bottom:15px;'>
         Rozegrane mecze: {total_matches}
         </div>
         """, unsafe_allow_html=True)
@@ -166,26 +190,74 @@ with t1:
         for p_id in [1,2]:
             with (c1 if p_id == 1 else c2):
                 st.write(f"Podgrupa {p_id}")
-                sub = st.session_state.groups[g][st.session_state.groups[g]['Podgrupa_ID']==p_id].copy()
+
+                sub = st.session_state.groups[g][
+                    st.session_state.groups[g]['Podgrupa_ID']==p_id
+                ].copy()
+
                 sub['S_Ratio'] = sub['Sety+'] / sub['Sety-'].replace(0,0.1)
-                sub = sub.sort_values(['Punkty','Wygrane','S_Ratio'], ascending=False)
+
+                sub = sub.sort_values(
+                    ['Punkty','Wygrane','S_Ratio'],
+                    ascending=False
+                )
+
                 sub.insert(0,'Miejsce', range(1,4))
 
                 st.dataframe(
-                    sub.drop(columns=['S_Ratio','Podgrupa_ID']).style.apply(apply_final_style, axis=1),
+                    sub.drop(columns=['S_Ratio','Podgrupa_ID'])
+                       .style.apply(apply_final_style, axis=1),
                     hide_index=True,
                     use_container_width=True
                 )
+
         st.divider()
 
 
+# -------------------------------------------------
+# ADMIN PANEL
+# -------------------------------------------------
 with t2:
     sel_g = st.selectbox("Wybierz grupę:", get_group_labels())
 
-    st.markdown("### ➕ Dodaj wynik meczu")
+    st.markdown("## 📝 Konfiguracja")
+
+    # ZMIANA NAZWY GRUPY
+    new_group_name = st.text_input(
+        "Edytuj nazwę grupy:",
+        value=st.session_state.group_names[sel_g]
+    )
+
+    if st.button("💾 Zapisz nazwę grupy"):
+        st.session_state.group_names[sel_g] = new_group_name
+        st.success("Zmieniono nazwę grupy!")
+        st.rerun()
+
+    st.divider()
+
+    # EDYCJA DRUŻYN
+    teams_df = st.session_state.groups[sel_g][['Drużyna']].copy()
+
+    edited_teams = st.data_editor(
+        teams_df,
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed"
+    )
+
+    if st.button("💾 Zapisz nazwy zespołów"):
+        st.session_state.groups[sel_g]['Drużyna'] = edited_teams['Drużyna'].values
+        st.success("Zaktualizowano nazwy zespołów!")
+        st.rerun()
+
+    st.divider()
+
+    # DODAWANIE MECZU
+    st.markdown("## ➕ Dodaj wynik meczu")
 
     with st.form(key=f"form_{sel_g}"):
         t_list = st.session_state.groups[sel_g]['Drużyna'].tolist()
+
         col1, col2 = st.columns(2)
         h_team = col1.selectbox("Gospodarz", t_list)
         a_team = col2.selectbox("Gość", [t for t in t_list if t != h_team])
@@ -194,17 +266,54 @@ with t2:
         for j in range(5):
             colA, colB = st.columns(2)
             with colA:
-                s_h = st.number_input(f"Set {j+1} - Gospodarz", 0, 45, 0)
+                s_h = st.number_input(f"Set {j+1} - Gospodarz", 0, 45, 0, key=f"h{sel_g}{j}")
             with colB:
-                s_g = st.number_input(f"Set {j+1} - Gość", 0, 45, 0)
+                s_g = st.number_input(f"Set {j+1} - Gość", 0, 45, 0, key=f"g{sel_g}{j}")
             res.extend([s_h, s_g])
 
         if st.form_submit_button("DODAJ MECZ"):
-            new_row = pd.DataFrame([[sel_g, h_team, a_team] + res],
-                columns=st.session_state.matches.columns)
-            st.session_state.matches = pd.concat([st.session_state.matches, new_row], ignore_index=True)
+            new_row = pd.DataFrame(
+                [[sel_g, h_team, a_team] + res],
+                columns=st.session_state.matches.columns
+            )
+            st.session_state.matches = pd.concat(
+                [st.session_state.matches, new_row],
+                ignore_index=True
+            )
             recalculate_everything()
+            st.success("Dodano mecz!")
             st.rerun()
+
+    st.divider()
+
+    # EDYCJA MECZÓW
+    st.markdown("## 🛠️ Edycja / Usuwanie meczów")
+
+    curr_matches = st.session_state.matches[
+        st.session_state.matches['Grupa'] == sel_g
+    ]
+
+    edited_matches = st.data_editor(
+        curr_matches,
+        use_container_width=True,
+        num_rows="dynamic"
+    )
+
+    if st.button("💾 Zapisz zmiany w meczach"):
+        other_matches = st.session_state.matches[
+            st.session_state.matches['Grupa'] != sel_g
+        ]
+
+        st.session_state.matches = pd.concat(
+            [other_matches, edited_matches],
+            ignore_index=True
+        )
+
+        recalculate_everything()
+        st.success("Zaktualizowano mecze!")
+        st.rerun()
+
+    st.divider()
 
     if st.button("🚨 WYCZYŚĆ WSZYSTKIE DANE"):
         st.session_state.clear()
