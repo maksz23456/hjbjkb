@@ -13,7 +13,7 @@ def get_group_labels():
     return [chr(i) for i in range(65, 73)]  # A-H
 
 def calculate_points(row):
-    """Punkty: 3:0/3:1 -> 3 pkt, 3:2 -> 2 pkt zwycięzca, 1 pkt przegrany"""
+    """Punkty: 3:0/3:1 -> 3 pkt, 3:2 -> 2 pkt, 2:3 -> 1 pkt"""
     if row['Wygrane'] == 3 and row['Przegrane'] <= 1:
         return 3
     elif row['Wygrane'] == 3 and row['Przegrane'] == 2:
@@ -22,45 +22,31 @@ def calculate_points(row):
         return 1
     return 0
 
-def sort_group(df):
-    temp_df = df.copy()
-    temp_df['Punkty'] = df.apply(calculate_points, axis=1)
-    temp_df['Stosunek'] = df.apply(lambda x: x['Sety+'] / max(x['Sety-'], 1), axis=1)
-    temp_df = temp_df.sort_values(['Punkty', 'Stosunek'], ascending=[False, False])
-    return temp_df.reset_index(drop=True)
+def sort_group_by_subgroups(df):
+    """Sortuje każdą podgrupę osobno i łączy je"""
+    df['Punkty'] = df.apply(calculate_points, axis=1)
+    df['Stosunek'] = df.apply(lambda x: x['Sety+'] / max(x['Sety-'], 1), axis=1)
+    
+    # Sortujemy wewnątrz podgrup
+    sub1 = df[df['Podgrupa'] == 1].sort_values(['Punkty', 'Stosunek'], ascending=[False, False])
+    sub2 = df[df['Podgrupa'] == 2].sort_values(['Punkty', 'Stosunek'], ascending=[False, False])
+    
+    # Dodajemy pozycję wewnątrz podgrupy (1, 2, 3)
+    sub1['Poz_w_podgrupie'] = range(1, 4)
+    sub2['Poz_w_podgrupie'] = range(1, 4)
+    
+    return pd.concat([sub1, sub2]).reset_index(drop=True)
 
-def style_subgroups(df):
+def style_subgroups(styler):
     """
-    Kolorowanie miejsc wg podgrup:
-    - każda grupa ma 2 podgrupy po 3 zespoły (1-3 i 4-6)
-    - top2 w podgrupie → niebieski, 3 miejsce → pomarańczowy
+    Koloruje komórki na podstawie pozycji Wewnątrz podgrupy.
     """
-    df_styled = df.style
-    colors = ['#a8c4e2', '#a8c4e2', '#f7c27b']  # top2 niebieski, 3. pomarańcz
-    bars = ['linear-gradient(90deg, #2196f3 15%, transparent 15%)',
-            'linear-gradient(90deg, #2196f3 15%, transparent 15%)',
-            'linear-gradient(90deg, #ff9800 15%, transparent 15%)']
+    def apply_color(row):
+        # Miejsca 1-2 w podgrupie na niebiesko, 3 na pomarańczowo
+        color = '#a8c4e2' if row['Poz_w_podgrupie'] <= 2 else '#f7c27b'
+        return [f'background-color: {color}' if col in ['Poz_w_podgrupie', 'Drużyna'] else '' for col in row.index]
 
-    # pierwsza podgrupa (0-2)
-    for i in range(3):
-        df_styled = df_styled.set_properties(subset=['Drużyna'], **{
-            'background': bars[i],
-            'padding-left': '5px'
-        }).set_properties(subset=['Poz','Drużyna'], **{
-            'background-color': colors[i]
-        })
-
-    # druga podgrupa (3-5)
-    for i in range(3, 6):
-        j = i - 3  # indeks w podgrupie
-        df_styled = df_styled.set_properties(subset=['Drużyna'], **{
-            'background': bars[j],
-            'padding-left': '5px'
-        }).set_properties(subset=['Poz','Drużyna'], **{
-            'background-color': colors[j]
-        })
-
-    return df_styled
+    return styler.apply(apply_color, axis=1)
 
 # --- INICJALIZACJA DANYCH ---
 group_labels = get_group_labels()
@@ -68,8 +54,9 @@ group_labels = get_group_labels()
 if 'groups' not in st.session_state:
     st.session_state.groups = {}
     for g in group_labels:
-        # 2 podgrupy po 3 zespoły = 6 zespołów w grupie
+        # Tworzymy 8 grup, każda ma 2 podgrupy po 3 zespoły
         st.session_state.groups[g] = pd.DataFrame({
+            'Podgrupa': [1, 1, 1, 2, 2, 2],
             'Drużyna': [f'{g}1 Team', f'{g}2 Team', f'{g}3 Team',
                         f'{g}4 Team', f'{g}5 Team', f'{g}6 Team'],
             'Mecze': [0]*6,
@@ -81,51 +68,43 @@ if 'groups' not in st.session_state:
 
 # --- INTERFEJS ---
 st.title("🏐 Mistrzostwa Polski Juniorów - Siatkówka")
-st.markdown("8 grup, każda podzielona na 2 podgrupy po 3 zespoły. "
-            "Top2 w podgrupie niebieskie, 3. miejsce pomarańczowe. "
-            "System punktowy: 3:0/3:1 → 3 pkt, 3:2 → 2/1 pkt.")
+st.info("System: 8 grup głównych. Każda grupa posiada 2 podgrupy. Miejsca 1-2 (Awans) są niebieskie, miejsce 3 jest pomarańczowe.")
 
-# --- TABY ---
-tab1, tab2, tab3 = st.tabs(["📊 Wszystkie Grupy", "✏️ Edycja Ręczna", "🏆 Drabinka"])
+tab1, tab2 = st.tabs(["📊 Tabele Grup", "✏️ Edycja Wyników"])
 
-# TAB1 – wyświetlanie grup
 with tab1:
-    for g in group_labels:
-        st.markdown(f"### Grupa {g}")
-        df_sorted = sort_group(st.session_state.groups[g])
-        df_display = df_sorted.copy()
-        df_display.insert(0, 'Poz', range(1, len(df_display)+1))
-        st.dataframe(
-            style_subgroups(df_display),
-            hide_index=True,
-            use_container_width=True
-        )
+    # Wyświetlamy po 2 grupy w rzędzie dla lepszej czytelności
+    for i in range(0, len(group_labels), 2):
+        cols = st.columns(2)
+        for j in range(2):
+            if i + j < len(group_labels):
+                g = group_labels[i + j]
+                with cols[j]:
+                    st.subheader(f"Grupa {g}")
+                    df_sorted = sort_group_by_subgroups(st.session_state.groups[g])
+                    
+                    # Stylizacja
+                    styled_df = df_sorted.style.pipe(style_subgroups)
+                    
+                    st.dataframe(
+                        styled_df,
+                        hide_index=True,
+                        use_container_width=True,
+                        column_order=("Podgrupa", "Poz_w_podgrupie", "Drużyna", "Mecze", "Wygrane", "Przegrane", "Sety+", "Sety-", "Punkty")
+                    )
 
-# TAB2 – edycja ręczna
 with tab2:
-    st.markdown("### ✏️ Panel Administratora")
+    st.subheader("✏️ Panel Administratora")
     selected_g = st.selectbox("Wybierz grupę do edycji:", group_labels)
+    
+    # Edytor danych
     edited_df = st.data_editor(
         st.session_state.groups[selected_g],
         num_rows="fixed",
         use_container_width=True
     )
+    
     if st.button(f"💾 Zapisz zmiany dla Grupy {selected_g}"):
         st.session_state.groups[selected_g] = edited_df
-        st.toast("Zmiany zapisane!")
-
-# TAB3 – symulacja drabinki
-with tab3:
-    st.markdown("### 🏆 Symulacja Fazy Pucharowej")
-    st.info("Top2 z każdej grupy do drabinki pucharowej.")
-    leaders = {g: sort_group(st.session_state.groups[g]).iloc[0]['Drużyna'] for g in group_labels}
-    runners_up = {g: sort_group(st.session_state.groups[g]).iloc[1]['Drużyna'] for g in group_labels}
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.code(f"{leaders['A']} vs {runners_up['B']}")
-    with c2: st.code(f"{leaders['C']} vs {runners_up['D']}")
-    with c3: st.code(f"{leaders['E']} vs {runners_up['F']}")
-    with c4: st.code(f"{leaders['G']} vs {runners_up['H']}")
-
-st.divider()
-st.caption("Mistrzostwa Polski Juniorów 2026 | Dane wprowadzane ręcznie")
+        st.success(f"Zapisano wyniki dla Grupy {selected_g}!")
+        st.rerun()
