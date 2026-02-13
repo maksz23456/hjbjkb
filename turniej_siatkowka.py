@@ -48,14 +48,13 @@ def update_tables():
 if 'group_names' not in st.session_state:
     st.session_state.group_names = {g: f"Grupa {g}" for g in get_group_labels()}
 
-expected_cols = ['Grupa', 'Gospodarz', 'Gość', 'S1_P1', 'S1_P2', 'S2_P1', 'S2_P2', 'S3_P1', 'S3_P2', 'S4_P1', 'S4_P2', 'S5_P1', 'S5_P2']
-if 'matches' not in st.session_state or list(st.session_state.matches.columns) != expected_cols:
+if 'groups' not in st.session_state:
     st.session_state.groups = {g: pd.DataFrame({
         'Podgrupa_ID': [1,1,1,2,2,2], 
         'Drużyna': [f'Zespół {g}{i}' for i in range(1,7)], 
         'Mecze':0, 'Punkty':0, 'Wygrane':0, 'Sety+':0, 'Sety-':0, 'Pkt+':0, 'Pkt-':0
     }) for g in get_group_labels()}
-    st.session_state.matches = pd.DataFrame(columns=expected_cols)
+    st.session_state.matches = pd.DataFrame(columns=['Grupa', 'Gospodarz', 'Gość', 'S1_P1', 'S1_P2', 'S2_P1', 'S2_P2', 'S3_P1', 'S3_P2', 'S4_P1', 'S4_P2', 'S5_P1', 'S5_P2'])
 
 def get_sorted_subgroup(gid, pid):
     temp = st.session_state.groups[gid][st.session_state.groups[gid]['Podgrupa_ID'] == pid].copy()
@@ -67,15 +66,14 @@ def style_row(row):
     color = '#a8c4e2' if row['Miejsce'] <= 2 else '#f7c27b'
     return [f'background-color: {color}; color: black; font-weight: bold' if col in ['Miejsce', 'Drużyna'] else '' for col in row.index]
 
-# --- 5. INTERFEJS ---
-st.title("🏐 System MP Juniorów - Livescore")
+# --- 4. INTERFEJS ---
+st.title("🏐 Oficjalny Panel MP")
 update_tables()
 
 tab1, tab2, tab3 = st.tabs(["📊 Tabele i Wyniki", "🏆 Faza Pucharowa", "✏️ Zarządzanie"])
 
 with tab1:
     for g in get_group_labels():
-        # Wyświetlanie nazwy grupy z session_state
         st.header(st.session_state.group_names[g])
         cols = st.columns(2)
         for i, col in enumerate(cols):
@@ -85,69 +83,60 @@ with tab1:
             with col:
                 st.subheader(f"Podgrupa {i+1}")
                 st.dataframe(sub_display.style.apply(style_row, axis=1), hide_index=True, use_container_width=True)
-                
-                teams_in_sub = sub['Drużyna'].tolist()
-                sub_m = st.session_state.matches[(st.session_state.matches['Grupa'] == g) & (st.session_state.matches['Gospodarz'].isin(teams_in_sub))]
-                for _, m in sub_m.iterrows():
-                    s1, s2, _, _, det = calculate_match_details(m)
-                    if s1+s2 > 0: st.write(f"🔹 {m['Gospodarz']} **{s1}:{s2}** {m['Gość']} _({det})_")
-        st.divider()
-
-with tab2:
-    st.header("🏁 Drabinki Pucharowe")
-    for g in get_group_labels():
-        with st.expander(f"Zestawienie: {st.session_state.group_names[g]}"):
-            sub1, sub2 = get_sorted_subgroup(g, 1), get_sorted_subgroup(g, 2)
-            t1_1, t1_2, t1_3 = sub1.iloc[0]['Drużyna'], sub1.iloc[1]['Drużyna'], sub1.iloc[2]['Drużyna']
-            t2_1, t2_2, t2_3 = sub2.iloc[0]['Drużyna'], sub2.iloc[1]['Drużyna'], sub2.iloc[2]['Drużyna']
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("#### ⚔️ Półfinały")
-                w1 = st.selectbox(f"Zwycięzca PF1: {t1_1} vs {t2_2}", ["-", t1_1, t2_2], key=f"w1_{g}")
-                w2 = st.selectbox(f"Zwycięzca PF2: {t2_1} vs {t1_2}", ["-", t2_1, t1_2], key=f"w2_{g}")
-            
-            with c2:
-                st.markdown("#### 🏆 Finały")
-                st.write(f"**O 5 MIEJSCE:** {t1_3} vs {t2_3}")
-                st.write(f"**FINAŁ GRUPY:** {w1} vs {w2}")
-                st.text_input("Wynik Finału", key=f"f_res_{g}")
 
 with tab3:
-    st.subheader("⚙️ Ustawienia Grupy")
+    st.subheader("⚙️ Zarządzanie Drużynami")
     sel_g = st.selectbox("Wybierz grupę do edycji:", get_group_labels())
     
-    # --- POPRAWKA NAZWY GRUPY ---
-    with st.container():
-        current_name = st.session_state.group_names[sel_g]
-        new_name = st.text_input(f"Zmień nazwę dla {sel_g}:", value=current_name)
-        if st.button("Zapisz nową nazwę grupy"):
-            st.session_state.group_names[sel_g] = new_name
-            st.success(f"Zmieniono nazwę na: {new_name}")
-            st.rerun()
-
-    # --- EDYCJA DRUŻYN ---
-    st.write("Edytuj nazwy drużyn (Pamiętaj o Enterze!):")
-    edited_df = st.data_editor(st.session_state.groups[sel_g], hide_index=True, use_container_width=True)
-    st.session_state.groups[sel_g] = edited_df
+    # 1. Zmiana nazwy grupy
+    current_g_name = st.session_state.group_names[sel_g]
+    new_g_name = st.text_input("Zmień nazwę tej grupy:", value=current_g_name)
+    if st.button("Zapisz nazwę grupy"):
+        st.session_state.group_names[sel_g] = new_g_name
+        st.rerun()
 
     st.divider()
-    st.subheader("📝 Dodaj Wynik")
+
+    # 2. Edycja drużyn z poprawką na szerokość i dublowanie
+    st.info("Zmień nazwy drużyn poniżej. Kolumna 'Drużyna' jest teraz rozszerzona.")
+    
+    # Konfiguracja kolumn - tu ustawiamy szerokość nazwy drużyny
+    config = {
+        "Drużyna": st.column_config.TextColumn("Nazwa Drużyny", width="large", required=True),
+        "Podgrupa_ID": st.column_config.NumberColumn("Podgrupa", disabled=True)
+    }
+    
+    edited_df = st.data_editor(
+        st.session_state.groups[sel_g],
+        column_config=config,
+        hide_index=True,
+        use_container_width=True,
+        height=260,
+        disabled=("Mecze", "Punkty", "Wygrane", "Sety+", "Sety-", "Pkt+", "Pkt-")
+    )
+
+    if st.button("✅ ZATWIERDŹ ZMIANY DRUŻYN"):
+        st.session_state.groups[sel_g] = edited_df
+        st.success("Zapisano! Teraz nazwy nie powinny się dublować.")
+        st.rerun()
+
+    st.divider()
+    st.subheader("📝 Dodaj Wynik Meczu")
     with st.form("m_form"):
-        teams_list = st.session_state.groups[sel_g]['Drużyna'].tolist()
+        current_teams = st.session_state.groups[sel_g]['Drużyna'].tolist()
         c1, c2 = st.columns(2)
-        d1 = c1.selectbox("Gospodarz", teams_list)
-        d2 = c2.selectbox("Gość", [t for t in teams_list if t != d1])
+        d1 = c1.selectbox("Gospodarz", current_teams)
+        d2 = c2.selectbox("Gość", [t for t in current_teams if t != d1])
         p_cols = st.columns(5)
-        pts = []
+        scores = []
         for j in range(5):
             with p_cols[j]:
-                pts.extend([st.number_input(f"S{j+1}-G",0,45,0,key=f"p1{j}{sel_g}"), 
-                           st.number_input(f"S{j+1}-H",0,45,0,key=f"p2{j}{sel_g}")])
-        if st.form_submit_button("Zapisz Mecz"):
-            st.session_state.matches.loc[len(st.session_state.matches)] = [sel_g, d1, d2] + pts
+                scores.extend([st.number_input(f"S{j+1}-G", 0, 45, 0, key=f"s1_{j}_{sel_g}"), 
+                              st.number_input(f"S{j+1}-H", 0, 45, 0, key=f"s2_{j}_{sel_g}")])
+        if st.form_submit_button("Zapisz Wynik"):
+            st.session_state.matches.loc[len(st.session_state.matches)] = [sel_g, d1, d2] + scores
             st.rerun()
 
-    if st.button("🚨 RESETUJ WSZYSTKO"):
+    if st.button("🚨 RESET CAŁOŚCI"):
         st.session_state.clear()
         st.rerun()
