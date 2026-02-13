@@ -39,8 +39,10 @@ def calculate_match_details(m):
 def update_tables():
     for g in get_group_labels():
         df = st.session_state.groups[g].copy()
+        # Reset statystyk przed ponownym przeliczeniem
         for col in ['Mecze', 'Punkty', 'Wygrane', 'Sety+', 'Sety-', 'Pkt+', 'Pkt-']: 
             df[col] = 0
+        
         group_matches = st.session_state.matches[st.session_state.matches['Grupa'] == g]
         for _, m in group_matches.iterrows():
             s1, s2, p1_m, p2_m, _ = calculate_match_details(m)
@@ -69,7 +71,7 @@ def style_row(row):
     return [f'background-color: {color}; color: black; font-weight: bold' if col in ['Miejsce', 'Drużyna'] else '' for col in row.index]
 
 # --- 4. INTERFEJS ---
-st.title("🏐 Oficjalny Panel MP")
+st.title("🏐 System MP Juniorów - Livescore")
 update_tables()
 
 tab1, tab2, tab3 = st.tabs(["📊 Tabele i Wyniki", "🏆 Faza Pucharowa", "✏️ Zarządzanie"])
@@ -86,7 +88,7 @@ with tab1:
                 st.subheader(f"Podgrupa {i+1}")
                 st.dataframe(sub_display.style.apply(style_row, axis=1), hide_index=True, use_container_width=True)
                 
-                # WYŚWIETLANIE LISTY MECZÓW POD TABELĄ
+                # Lista meczów w podgrupie
                 teams_in_sub = sub['Drużyna'].tolist()
                 sub_m = st.session_state.matches[(st.session_state.matches['Grupa'] == g) & (st.session_state.matches['Gospodarz'].isin(teams_in_sub))]
                 for _, m in sub_m.iterrows():
@@ -95,54 +97,87 @@ with tab1:
         st.divider()
 
 with tab3:
-    st.subheader("⚙️ Ustawienia")
-    sel_g = st.selectbox("Wybierz grupę:", get_group_labels(), key="sel_g_main")
+    st.subheader("⚙️ Zarządzanie")
+    sel_g = st.selectbox("Wybierz grupę:", get_group_labels(), key="sel_g_manage")
     
-    # Edycja nazw drużyn
-    config = {"Drużyna": st.column_config.TextColumn("Nazwa Drużyny", width="extra-large")}
-    edited_df = st.data_editor(st.session_state.groups[sel_g], column_config=config, hide_index=True, key=f"ed_{sel_g}")
-    if st.button(f"Zapisz zmiany drużyn dla {sel_g}"):
-        st.session_state.groups[sel_g] = edited_df
-        st.rerun()
+    # --- 1. EDYCJA DRUŻYN ---
+    st.markdown("### 🏟️ Drużyny i nazwa grupy")
+    col_name, col_table = st.columns([1, 2])
+    with col_name:
+        new_g_name = st.text_input("Nazwa grupy:", value=st.session_state.group_names[sel_g])
+        if st.button("Zapisz nazwę"):
+            st.session_state.group_names[sel_g] = new_g_name
+            st.rerun()
+    with col_table:
+        config_t = {"Drużyna": st.column_config.TextColumn("Nazwa Drużyny", width="large")}
+        edited_teams = st.data_editor(st.session_state.groups[sel_g], column_config=config_t, hide_index=True, key=f"ed_t_{sel_g}")
+        if st.button("Zapisz zmiany nazw drużyn"):
+            st.session_state.groups[sel_g] = edited_teams
+            st.rerun()
 
     st.divider()
-    st.subheader("📝 Dodaj Nowy Mecz")
+
+    # --- 2. EDYCJA ISTNIEJĄCYCH MECZÓW ---
+    st.markdown("### 📝 Edytuj wpisane mecze")
+    st.warning("Tutaj możesz poprawić literówki w wynikach lub zmienić drużyny w już dodanych meczach.")
     
-    # Formularz z unikalnym ID opartym na liczbie meczów (żeby się czyścił)
-    form_id = f"match_form_{sel_g}_{len(st.session_state.matches)}"
-    
+    if not st.session_state.matches.empty:
+        # Filtr meczów tylko dla wybranej grupy dla przejrzystości
+        current_g_matches = st.session_state.matches[st.session_state.matches['Grupa'] == sel_g]
+        
+        if not current_g_matches.empty:
+            edited_m = st.data_editor(
+                current_g_matches, 
+                hide_index=False, # Pokazujemy index, żeby łatwiej było usuwać
+                key=f"match_editor_{sel_g}",
+                num_rows="dynamic" # Pozwala usuwać wiersze (zaznacz wiersz i naciśnij Delete)
+            )
+            
+            if st.button("💾 ZAPISZ POPRAWKI W MECZACH"):
+                # Aktualizujemy główną bazę meczów o zmiany z edytora
+                st.session_state.matches.update(edited_m)
+                # Usuwamy mecze, które zostały skasowane w edytorze
+                st.session_state.matches = st.session_state.matches.loc[edited_m.index]
+                st.success("Zmiany w wynikach zostały zapisane i przeliczone!")
+                st.rerun()
+        else:
+            st.info("Brak wpisanych meczów w tej grupie.")
+    else:
+        st.info("Baza meczów jest pusta.")
+
+    st.divider()
+
+    # --- 3. DODAWANIE NOWEGO MECZU ---
+    st.markdown("### ➕ Dodaj nowy mecz")
+    form_id = f"f_{sel_g}_{len(st.session_state.matches)}"
     with st.form(key=form_id):
         teams = st.session_state.groups[sel_g]['Drużyna'].tolist()
         c1, c2 = st.columns(2)
-        d1 = c1.selectbox("Gospodarz", teams, key=f"h_{form_id}")
-        d2 = c2.selectbox("Gość", [t for t in teams if t != d1], key=f"a_{form_id}")
+        d1 = c1.selectbox("Gospodarz", teams)
+        d2 = c2.selectbox("Gość", [t for t in teams if t != d1])
         
-        st.write("Punkty w setach (Tie-break do 15):")
         p_cols = st.columns(5)
         scores = []
         for j in range(5):
             with p_cols[j]:
-                label = f"S{j+1}" if j < 4 else "S5"
-                s_h = st.number_input(f"{label}-H", 0, 45, 0, key=f"sh_{j}_{form_id}")
-                s_g = st.number_input(f"{label}-G", 0, 45, 0, key=f"sg_{j}_{form_id}")
+                label = f"S{j+1}" if j < 4 else "S5 (15)"
+                s_h = st.number_input(f"{label}-H", 0, 45, 0, key=f"nh_{j}_{form_id}")
+                s_g = st.number_input(f"{label}-G", 0, 45, 0, key=f"ng_{j}_{form_id}")
                 scores.extend([s_h, s_g])
         
-        if st.form_submit_button("Zatwierdź wynik"):
-            # Sprawdzenie wyniku (czy jest 3:X)
-            s1_t, s2_t = 0, 0
+        if st.form_submit_button("Zatwierdź nowy mecz"):
+            s1, s2 = 0, 0
             for i in range(0, 10, 2):
-                if scores[i] > scores[i+1]: s1_t += 1
-                elif scores[i+1] > scores[i]: s2_t += 1
+                if scores[i] > scores[i+1]: s1 += 1
+                elif scores[i+1] > scores[i]: s2 += 1
             
-            if s1_t == 3 or s2_t == 3:
-                # Dodanie nowego wiersza bez nadpisywania
-                new_match = pd.DataFrame([[sel_g, d1, d2] + scores], columns=st.session_state.matches.columns)
-                st.session_state.matches = pd.concat([st.session_state.matches, new_match], ignore_index=True)
-                st.success(f"Dodano mecz: {d1} {s1_t}:{s2_t} {d2}")
+            if s1 == 3 or s2 == 3:
+                new_row = pd.DataFrame([[sel_g, d1, d2] + scores], columns=st.session_state.matches.columns)
+                st.session_state.matches = pd.concat([st.session_state.matches, new_row], ignore_index=True)
                 st.rerun()
             else:
-                st.error("Błąd: Jeden z zespołów musi wygrać 3 sety!")
+                st.error("Mecz musi kończyć się wynikiem 3:X!")
 
-    if st.button("🚨 CZYŚĆ WSZYSTKO"):
+    if st.button("🚨 RESET BAZY DANYCH"):
         st.session_state.clear()
         st.rerun()
