@@ -29,27 +29,38 @@ def sort_group(df):
     temp_df = temp_df.sort_values(['Punkty', 'Stosunek'], ascending=[False, False])
     return temp_df.reset_index(drop=True)
 
-def style_top3(df):
+def style_subgroups(df):
     """
-    Kolorowanie wierszy:
-    1 i 2 miejsce → niebieski, pasek niebieski obok nazwy
-    3 miejsce → pomarańczowy, pasek pomarańczowy obok nazwy
+    Kolorowanie miejsc wg podgrup:
+    - każda grupa ma 2 podgrupy po 3 zespoły (1-3 i 4-6)
+    - top2 w podgrupie → niebieski, 3 miejsce → pomarańczowy
     """
-    colors = ['#a8c4e2', '#a8c4e2', '#f7c27b']  # top1/top2 niebieski, top3 pomarańcz
+    df_styled = df.style
+    colors = ['#a8c4e2', '#a8c4e2', '#f7c27b']  # top2 niebieski, 3. pomarańcz
     bars = ['linear-gradient(90deg, #2196f3 15%, transparent 15%)',
             'linear-gradient(90deg, #2196f3 15%, transparent 15%)',
             'linear-gradient(90deg, #ff9800 15%, transparent 15%)']
 
-    styler = df.style
-    for i in range(len(df)):
-        if i < 3:
-            styler = styler.set_properties(subset=['Drużyna'], **{
-                'background': bars[i],
-                'padding-left': '5px'
-            }).set_properties(subset=df.columns, **{
-                'background-color': colors[i]
-            })
-    return styler
+    # pierwsza podgrupa (0-2)
+    for i in range(3):
+        df_styled = df_styled.set_properties(subset=['Drużyna'], **{
+            'background': bars[i],
+            'padding-left': '5px'
+        }).set_properties(subset=['Poz','Drużyna'], **{
+            'background-color': colors[i]
+        })
+
+    # druga podgrupa (3-5)
+    for i in range(3, 6):
+        j = i - 3  # indeks w podgrupie
+        df_styled = df_styled.set_properties(subset=['Drużyna'], **{
+            'background': bars[j],
+            'padding-left': '5px'
+        }).set_properties(subset=['Poz','Drużyna'], **{
+            'background-color': colors[j]
+        })
+
+    return df_styled
 
 # --- INICJALIZACJA DANYCH ---
 group_labels = get_group_labels()
@@ -57,7 +68,7 @@ group_labels = get_group_labels()
 if 'groups' not in st.session_state:
     st.session_state.groups = {}
     for g in group_labels:
-        # 2 podgrupy po 3 zespoły = 6 zespołów
+        # 2 podgrupy po 3 zespoły = 6 zespołów w grupie
         st.session_state.groups[g] = pd.DataFrame({
             'Drużyna': [f'{g}1 Team', f'{g}2 Team', f'{g}3 Team',
                         f'{g}4 Team', f'{g}5 Team', f'{g}6 Team'],
@@ -71,6 +82,7 @@ if 'groups' not in st.session_state:
 # --- INTERFEJS ---
 st.title("🏐 Mistrzostwa Polski Juniorów - Siatkówka")
 st.markdown("8 grup, każda podzielona na 2 podgrupy po 3 zespoły. "
+            "Top2 w podgrupie niebieskie, 3. miejsce pomarańczowe. "
             "System punktowy: 3:0/3:1 → 3 pkt, 3:2 → 2/1 pkt.")
 
 # --- TABY ---
@@ -78,20 +90,16 @@ tab1, tab2, tab3 = st.tabs(["📊 Wszystkie Grupy", "✏️ Edycja Ręczna", "�
 
 # TAB1 – wyświetlanie grup
 with tab1:
-    for row in range(0, 8, 2):
-        col1, col2 = st.columns(2)
-        for i, col in enumerate([col1, col2]):
-            current_g = group_labels[row + i]
-            with col:
-                st.markdown(f"### Grupa {current_g}")
-                df_sorted = sort_group(st.session_state.groups[current_g])
-                df_display = df_sorted.copy()
-                df_display.insert(0, 'Poz', range(1, len(df_display)+1))
-                st.dataframe(
-                    style_top3(df_display),
-                    hide_index=True,
-                    use_container_width=True
-                )
+    for g in group_labels:
+        st.markdown(f"### Grupa {g}")
+        df_sorted = sort_group(st.session_state.groups[g])
+        df_display = df_sorted.copy()
+        df_display.insert(0, 'Poz', range(1, len(df_display)+1))
+        st.dataframe(
+            style_subgroups(df_display),
+            hide_index=True,
+            use_container_width=True
+        )
 
 # TAB2 – edycja ręczna
 with tab2:
@@ -109,7 +117,7 @@ with tab2:
 # TAB3 – symulacja drabinki
 with tab3:
     st.markdown("### 🏆 Symulacja Fazy Pucharowej")
-    st.info("Top 2 z każdej grupy do drabinki pucharowej.")
+    st.info("Top2 z każdej grupy do drabinki pucharowej.")
     leaders = {g: sort_group(st.session_state.groups[g]).iloc[0]['Drużyna'] for g in group_labels}
     runners_up = {g: sort_group(st.session_state.groups[g]).iloc[1]['Drużyna'] for g in group_labels}
 
