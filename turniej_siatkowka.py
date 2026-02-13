@@ -25,7 +25,8 @@ def calculate_match_details(m):
 def update_tables():
     for g in get_group_labels():
         df = st.session_state.groups[g].copy()
-        for col in ['Mecze', 'Punkty', 'Wygrane', 'Sety+', 'Sety-', 'Pkt+', 'Pkt-']: df[col] = 0
+        for col in ['Mecze', 'Punkty', 'Wygrane', 'Sety+', 'Sety-', 'Pkt+', 'Pkt-']: 
+            df[col] = 0
         group_matches = st.session_state.matches[st.session_state.matches['Grupa'] == g]
         for _, m in group_matches.iterrows():
             s1, s2, p1_m, p2_m, _ = calculate_match_details(m)
@@ -46,7 +47,11 @@ def update_tables():
 # --- 3. INICJALIZACJA DANYCH ---
 expected_cols = ['Grupa', 'Gospodarz', 'Gość', 'S1_P1', 'S1_P2', 'S2_P1', 'S2_P2', 'S3_P1', 'S3_P2', 'S4_P1', 'S4_P2', 'S5_P1', 'S5_P2']
 if 'matches' not in st.session_state or list(st.session_state.matches.columns) != expected_cols:
-    st.session_state.groups = {g: pd.DataFrame({'Podgrupa_ID': [1,1,1,2,2,2], 'Drużyna': [f'Zespół {g}{i}' for i in range(1,7)], 'Mecze':0, 'Punkty':0, 'Wygrane':0, 'Sety+':0, 'Sety-':0, 'Pkt+':0, 'Pkt-':0}) for g in get_group_labels()}
+    st.session_state.groups = {g: pd.DataFrame({
+        'Podgrupa_ID': [1,1,1,2,2,2], 
+        'Drużyna': [f'Zespół {g}{i}' for i in range(1,7)], 
+        'Mecze':0, 'Punkty':0, 'Wygrane':0, 'Sety+':0, 'Sety-':0, 'Pkt+':0, 'Pkt-':0
+    }) for g in get_group_labels()}
     st.session_state.matches = pd.DataFrame(columns=expected_cols)
 
 def get_sorted_subgroup(gid, pid):
@@ -96,31 +101,24 @@ with tab2:
         col_pf, col_fin = st.columns(2)
         with col_pf:
             st.markdown("### ⚔️ Półfinały")
-            pf1_res = st.text_input(f"PF1: {t1_1} vs {t2_2}", key=f"pf1_{g_playoff}")
-            pf2_res = st.text_input(f"PF2: {t2_1} vs {t1_2}", key=f"pf2_{g_playoff}")
+            st.text_input(f"PF1: {t1_1} vs {t2_2}", key=f"pf1_{g_playoff}")
+            st.text_input(f"PF2: {t2_1} vs {t1_2}", key=f"pf2_{g_playoff}")
         with col_fin:
             st.markdown("### 🏆 Mecze o miejsca")
-            m5_res = st.text_input(f"O 5 MIEJSCE: {t1_3} vs {t2_3}", key=f"m5_{g_playoff}")
-            m3_res = st.text_input("O 3 MIEJSCE (przegrani PF)", key=f"m3_{g_playoff}")
-            m1_res = st.text_input("FINAŁ GRUPY (wygrani PF)", key=f"m1_{g_playoff}")
-
-    
-
-[Image of volleyball tournament bracket]
-
+            st.text_input(f"O 5 MIEJSCE: {t1_3} vs {t2_3}", key=f"m5_{g_playoff}")
+            st.text_input("O 3 MIEJSCE", key=f"m3_{g_playoff}")
+            st.text_input("FINAŁ GRUPY", key=f"m1_{g_playoff}")
 
 with tab3:
     st.subheader("Wpisz nowy mecz grupowy")
     with st.form("new_match"):
         c_g, c_h, c_a = st.columns([1, 2, 2])
         g_sel = c_g.selectbox("Grupa", get_group_labels())
-        teams = st.session_state.groups[g_sel]['Drużyna'].tolist()
+        teams_list = st.session_state.groups[g_sel]['Drużyna'].tolist()
         
-        # POPRAWKA BŁĘDU NAMEERROR:
-        d1 = c_h.selectbox("Gospodarz", teams)
-        # Tworzymy listę gości bez gospodarza przed selectboxem
-        goscie = [t for t in teams if t != d1]
-        d2 = c_a.selectbox("Gość", goscie)
+        d1 = c_h.selectbox("Gospodarz", teams_list)
+        goscie_list = [t for t in teams_list if t != d1]
+        d2 = c_a.selectbox("Gość", goscie_list)
         
         st.write("Punkty w setach:")
         p_cols = st.columns(5)
@@ -130,7 +128,7 @@ with tab3:
                 pts_in.append(st.number_input(f"S{j+1}-G", 0, 45, 0, key=f"n_s{j}p1"))
                 pts_in.append(st.number_input(f"S{j+1}-H", 0, 45, 0, key=f"n_s{j}p2"))
         
-        if st.form_submit_button("Zapisz Mecz"):
+        if st.form_submit_button("Zatwierdź Mecz"):
             st.session_state.matches.loc[len(st.session_state.matches)] = [g_sel, d1, d2] + pts_in
             st.rerun()
 
