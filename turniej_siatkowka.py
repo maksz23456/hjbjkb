@@ -4,10 +4,24 @@ import pandas as pd
 # --- 1. KONFIGURACJA STRONY ---
 st.set_page_config(page_title="MP Juniorów - Livescore", layout="wide")
 
-# --- 2. FUNKCJE POMOCNICZE ---
+# --- 2. INICJALIZACJA DANYCH (Wywoływana raz) ---
 def get_group_labels():
     return [chr(i) for i in range(65, 73)]
 
+if 'group_names' not in st.session_state:
+    st.session_state.group_names = {g: f"Grupa {g}" for g in get_group_labels()}
+
+if 'groups' not in st.session_state:
+    st.session_state.groups = {g: pd.DataFrame({
+        'Podgrupa_ID': [1,1,1,2,2,2], 
+        'Drużyna': [f'Zespół {g}{i}' for i in range(1,7)], 
+        'Mecze':0, 'Punkty':0, 'Wygrane':0, 'Sety+':0, 'Sety-':0, 'Pkt+':0, 'Pkt-':0
+    }) for g in get_group_labels()}
+
+if 'matches' not in st.session_state:
+    st.session_state.matches = pd.DataFrame(columns=['Grupa', 'Gospodarz', 'Gość', 'S1_P1', 'S1_P2', 'S2_P1', 'S2_P2', 'S3_P1', 'S3_P2', 'S4_P1', 'S4_P2', 'S5_P1', 'S5_P2'])
+
+# --- 3. FUNKCJE POMOCNICZE ---
 def calculate_match_details(m):
     s1, s2, p1_t, p2_t = 0, 0, 0, 0
     res = []
@@ -44,18 +58,6 @@ def update_tables():
                         df.loc[idx, 'Punkty'] += p_pts
         st.session_state.groups[g] = df
 
-# --- 3. INICJALIZACJA DANYCH ---
-if 'group_names' not in st.session_state:
-    st.session_state.group_names = {g: f"Grupa {g}" for g in get_group_labels()}
-
-if 'groups' not in st.session_state:
-    st.session_state.groups = {g: pd.DataFrame({
-        'Podgrupa_ID': [1,1,1,2,2,2], 
-        'Drużyna': [f'Zespół {g}{i}' for i in range(1,7)], 
-        'Mecze':0, 'Punkty':0, 'Wygrane':0, 'Sety+':0, 'Sety-':0, 'Pkt+':0, 'Pkt-':0
-    }) for g in get_group_labels()}
-    st.session_state.matches = pd.DataFrame(columns=['Grupa', 'Gospodarz', 'Gość', 'S1_P1', 'S1_P2', 'S2_P1', 'S2_P2', 'S3_P1', 'S3_P2', 'S4_P1', 'S4_P2', 'S5_P1', 'S5_P2'])
-
 def get_sorted_subgroup(gid, pid):
     temp = st.session_state.groups[gid][st.session_state.groups[gid]['Podgrupa_ID'] == pid].copy()
     temp['S_Ratio'] = temp['Sety+'] / temp['Sety-'].replace(0, 0.1)
@@ -67,7 +69,7 @@ def style_row(row):
     return [f'background-color: {color}; color: black; font-weight: bold' if col in ['Miejsce', 'Drużyna'] else '' for col in row.index]
 
 # --- 4. INTERFEJS ---
-st.title("🏐 Oficjalny Panel MP")
+st.title("🏐 Oficjalny System Wyników MP")
 update_tables()
 
 tab1, tab2, tab3 = st.tabs(["📊 Tabele i Wyniki", "🏆 Faza Pucharowa", "✏️ Zarządzanie"])
@@ -83,46 +85,48 @@ with tab1:
             with col:
                 st.subheader(f"Podgrupa {i+1}")
                 st.dataframe(sub_display.style.apply(style_row, axis=1), hide_index=True, use_container_width=True)
+        st.divider()
 
 with tab3:
-    st.subheader("⚙️ Zarządzanie Drużynami")
-    sel_g = st.selectbox("Wybierz grupę do edycji:", get_group_labels())
+    st.subheader("⚙️ Zarządzanie Grupami i Drużynami")
+    sel_g = st.selectbox("Wybierz grupę do edycji:", get_group_labels(), key="group_selector")
     
-    # 1. Zmiana nazwy grupy
-    current_g_name = st.session_state.group_names[sel_g]
-    new_g_name = st.text_input("Zmień nazwę tej grupy:", value=current_g_name)
-    if st.button("Zapisz nazwę grupy"):
+    # 1. Zmiana nazwy grupy (z przyciskiem zapisu)
+    new_g_name = st.text_input(f"Zmień nazwę dla Grupy {sel_g}:", value=st.session_state.group_names[sel_g])
+    if st.button(f"Zapisz nazwę dla {sel_g}"):
         st.session_state.group_names[sel_g] = new_g_name
+        st.success(f"Zapisano nazwę: {new_g_name}")
         st.rerun()
 
     st.divider()
 
-    # 2. Edycja drużyn z poprawką na szerokość i dublowanie
-    st.info("Zmień nazwy drużyn poniżej. Kolumna 'Drużyna' jest teraz rozszerzona.")
+    # 2. Edycja drużyn (Z unikalnym kluczem dla każdej grupy)
+    st.info("Wpisz nazwy drużyn. Kolumna 'Drużyna' jest szeroka.")
     
-    # Konfiguracja kolumn - tu ustawiamy szerokość nazwy drużyny
     config = {
         "Drużyna": st.column_config.TextColumn("Nazwa Drużyny", width="large", required=True),
         "Podgrupa_ID": st.column_config.NumberColumn("Podgrupa", disabled=True)
     }
     
+    # KLUCZ 'key' jest tutaj najważniejszy - zmienia się dla każdej grupy
     edited_df = st.data_editor(
         st.session_state.groups[sel_g],
         column_config=config,
         hide_index=True,
         use_container_width=True,
         height=260,
+        key=f"editor_{sel_g}",
         disabled=("Mecze", "Punkty", "Wygrane", "Sety+", "Sety-", "Pkt+", "Pkt-")
     )
 
-    if st.button("✅ ZATWIERDŹ ZMIANY DRUŻYN"):
+    if st.button(f"✅ ZATWIERDŹ DRUŻYNY W GRUPIE {sel_g}"):
         st.session_state.groups[sel_g] = edited_df
-        st.success("Zapisano! Teraz nazwy nie powinny się dublować.")
+        st.success(f"Zaktualizowano zespoły dla grupy {sel_g}!")
         st.rerun()
 
     st.divider()
     st.subheader("📝 Dodaj Wynik Meczu")
-    with st.form("m_form"):
+    with st.form(f"m_form_{sel_g}"):
         current_teams = st.session_state.groups[sel_g]['Drużyna'].tolist()
         c1, c2 = st.columns(2)
         d1 = c1.selectbox("Gospodarz", current_teams)
