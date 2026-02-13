@@ -4,7 +4,7 @@ import pandas as pd
 # --- 1. KONFIGURACJA STRONY ---
 st.set_page_config(page_title="MP Juniorów - Livescore", layout="wide")
 
-# --- 2. INICJALIZACJA DANYCH (Wywoływana raz) ---
+# --- 2. INICJALIZACJA DANYCH ---
 def get_group_labels():
     return [chr(i) for i in range(65, 73)]
 
@@ -69,7 +69,7 @@ def style_row(row):
     return [f'background-color: {color}; color: black; font-weight: bold' if col in ['Miejsce', 'Drużyna'] else '' for col in row.index]
 
 # --- 4. INTERFEJS ---
-st.title("🏐 Oficjalny System Wyników MP")
+st.title("🏐 Panel Wyników MP Juniorów")
 update_tables()
 
 tab1, tab2, tab3 = st.tabs(["📊 Tabele i Wyniki", "🏆 Faza Pucharowa", "✏️ Zarządzanie"])
@@ -88,45 +88,48 @@ with tab1:
         st.divider()
 
 with tab3:
-    st.subheader("⚙️ Zarządzanie Grupami i Drużynami")
-    sel_g = st.selectbox("Wybierz grupę do edycji:", get_group_labels(), key="group_selector")
+    st.subheader("⚙️ Zarządzanie Drużynami")
+    sel_g = st.selectbox("Wybierz grupę do edycji:", get_group_labels(), key="group_editor_select")
     
-    # 1. Zmiana nazwy grupy (z przyciskiem zapisu)
-    new_g_name = st.text_input(f"Zmień nazwę dla Grupy {sel_g}:", value=st.session_state.group_names[sel_g])
-    if st.button(f"Zapisz nazwę dla {sel_g}"):
+    # Zmiana nazwy grupy
+    current_g_name = st.session_state.group_names[sel_g]
+    new_g_name = st.text_input(f"Zmień nazwę dla Grupy {sel_g}:", value=current_g_name)
+    if st.button(f"Zatwierdź nazwę grupy {sel_g}"):
         st.session_state.group_names[sel_g] = new_g_name
-        st.success(f"Zapisano nazwę: {new_g_name}")
         st.rerun()
 
     st.divider()
 
-    # 2. Edycja drużyn (Z unikalnym kluczem dla każdej grupy)
-    st.info("Wpisz nazwy drużyn. Kolumna 'Drużyna' jest szeroka.")
+    # --- POPRAWKA SZEROKOŚCI KOLUMNY ---
+    st.info("Wpisz nazwy drużyn. Kolumna 'Drużyna' jest teraz maksymalnie szeroka.")
     
-    config = {
-        "Drużyna": st.column_config.TextColumn("Nazwa Drużyny", width="large", required=True),
+    column_configuration = {
+        "Drużyna": st.column_config.TextColumn(
+            "Pełna Nazwa Drużyny", 
+            width="extra-large",  # MAKSYMALNA SZEROKOŚĆ
+            required=True
+        ),
         "Podgrupa_ID": st.column_config.NumberColumn("Podgrupa", disabled=True)
     }
     
-    # KLUCZ 'key' jest tutaj najważniejszy - zmienia się dla każdej grupy
     edited_df = st.data_editor(
         st.session_state.groups[sel_g],
-        column_config=config,
+        column_config=column_configuration,
         hide_index=True,
         use_container_width=True,
         height=260,
-        key=f"editor_{sel_g}",
+        key=f"editor_v3_{sel_g}",
         disabled=("Mecze", "Punkty", "Wygrane", "Sety+", "Sety-", "Pkt+", "Pkt-")
     )
 
-    if st.button(f"✅ ZATWIERDŹ DRUŻYNY W GRUPIE {sel_g}"):
+    if st.button(f"✅ ZAPISZ DRUŻYNY DLA GRUPY {sel_g}"):
         st.session_state.groups[sel_g] = edited_df
-        st.success(f"Zaktualizowano zespoły dla grupy {sel_g}!")
+        st.success(f"Zapisano zmiany w grupie {sel_g}!")
         st.rerun()
 
     st.divider()
-    st.subheader("📝 Dodaj Wynik Meczu")
-    with st.form(f"m_form_{sel_g}"):
+    st.subheader("📝 Dodaj Mecz")
+    with st.form(f"form_final_{sel_g}"):
         current_teams = st.session_state.groups[sel_g]['Drużyna'].tolist()
         c1, c2 = st.columns(2)
         d1 = c1.selectbox("Gospodarz", current_teams)
@@ -135,12 +138,12 @@ with tab3:
         scores = []
         for j in range(5):
             with p_cols[j]:
-                scores.extend([st.number_input(f"S{j+1}-G", 0, 45, 0, key=f"s1_{j}_{sel_g}"), 
-                              st.number_input(f"S{j+1}-H", 0, 45, 0, key=f"s2_{j}_{sel_g}")])
-        if st.form_submit_button("Zapisz Wynik"):
+                scores.extend([st.number_input(f"S{j+1}-G", 0, 45, 0, key=f"scr1_{j}_{sel_g}"), 
+                              st.number_input(f"S{j+1}-H", 0, 45, 0, key=f"scr2_{j}_{sel_g}")])
+        if st.form_submit_button("Dodaj Wynik"):
             st.session_state.matches.loc[len(st.session_state.matches)] = [sel_g, d1, d2] + scores
             st.rerun()
 
-    if st.button("🚨 RESET CAŁOŚCI"):
+    if st.button("🚨 TOTALNY RESET"):
         st.session_state.clear()
         st.rerun()
