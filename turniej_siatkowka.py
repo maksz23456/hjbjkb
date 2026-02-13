@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
 
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(
@@ -12,26 +11,30 @@ st.set_page_config(
 
 # --- FUNKCJE LOGICZNE ---
 def get_group_labels():
-    return [chr(i) for i in range(65, 73)]  # ['A', 'B', ..., 'H']
+    """Zwraca listę grup ['A', 'B', ..., 'H']"""
+    return [chr(i) for i in range(65, 73)]
 
 def fetch_live_data():
-    """Pobiera dane ze strony VolleyStation"""
+    """Pobiera dane tabelaryczne ze strony VolleyStation"""
     url = "https://juniorzymmp.volleystation.com/en/"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        tables = pd.read_html(response.text)
+        tables = pd.read_html(response.text)  # pandas odczyta wszystkie tabele z HTML
         return tables
     except Exception as e:
         st.error(f"Nie udało się pobrać danych automatycznie: {e}")
         return None
 
 def calculate_points(row):
+    """Zasady punktacji: 3 pkt za wygraną"""
     return row['Wygrane'] * 3
 
 def sort_group(df):
+    """Sortowanie grupy po punktach i stosunku setów"""
     temp_df = df.copy()
     temp_df['Punkty'] = temp_df.apply(calculate_points, axis=1)
     temp_df['Stosunek'] = temp_df.apply(lambda x: x['Sety+'] / max(x['Sety-'], 1), axis=1)
@@ -39,6 +42,7 @@ def sort_group(df):
     return temp_df.reset_index(drop=True)
 
 def get_position_color(pos):
+    """Kolorowanie pierwszych dwóch miejsc w tabeli"""
     if pos == 0: return 'background-color: #d4edda'  # Zielony
     if pos == 1: return 'background-color: #d1ecf1'  # Niebieski
     return ''
@@ -62,7 +66,7 @@ if 'groups' not in st.session_state:
 st.title("🏐 Mistrzostwa Polski Juniorów - Siatkówka")
 st.markdown("System obsługujący **8 grup po 6 zespołów** z aktualizacją live.")
 
-# Pasek boczny
+# --- PASEK BOCZNY ---
 with st.sidebar:
     st.header("Ustawienia Live")
     if st.button("🔄 Pobierz wyniki z VolleyStation", use_container_width=True):
@@ -73,9 +77,10 @@ with st.sidebar:
                     st.session_state.groups[label] = data[i].iloc[:6, :6]
             st.success("Zaktualizowano dane!")
 
-# --- Taby ---
+# --- TABY ---
 tab1, tab2, tab3 = st.tabs(["📊 Wszystkie Grupy (A-H)", "✏️ Edycja Ręczna", "🏆 Drabinka"])
 
+# --- TAB 1: Wyświetlanie wszystkich grup ---
 with tab1:
     for row in range(0, 8, 2):
         col1, col2 = st.columns(2)
@@ -87,11 +92,16 @@ with tab1:
                 df_display = df_sorted.copy()
                 df_display.insert(0, 'Poz', range(1, len(df_display) + 1))
                 st.dataframe(
-                    df_display.style.apply(lambda x: [get_position_color(i) for i in range(len(x))], axis=0, subset=['Poz', 'Drużyna']),
+                    df_display.style.apply(
+                        lambda x: [get_position_color(i) for i in range(len(x))],
+                        axis=0,
+                        subset=['Poz', 'Drużyna']
+                    ),
                     hide_index=True,
                     use_container_width=True
                 )
 
+# --- TAB 2: Edycja ręczna ---
 with tab2:
     st.markdown("### ✏️ Panel Administratora")
     selected_g = st.selectbox("Wybierz grupę do edycji:", group_labels)
@@ -104,6 +114,7 @@ with tab2:
         st.session_state.groups[selected_g] = edited_df
         st.toast("Zmiany zapisane!")
 
+# --- TAB 3: Symulacja fazy pucharowej ---
 with tab3:
     st.markdown("### 🏆 Symulacja Fazy Pucharowej")
     st.info("Automatyczne parowanie zwycięzców grup (Top 2 z każdej grupy).")
